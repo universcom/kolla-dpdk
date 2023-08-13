@@ -1,0 +1,15 @@
+---
+- name: Set br_int to net_dev 
+  become: true
+  shell: "ovs-vsctl set Bridge br-int datapath_type=netdev"
+  when: inventory_hostname in groups.get('ovs-dpdk', [])
+
+- name: attaching br_int to br_dpdk
+  become: true
+  shell: "ovs-vsctl add-port br-int br-int-to-patch -- set interface br-int-to-patch type=patch -- set interface br-int-to-patch options:peer=patch-to-br-int"
+  when: inventory_hostname in groups.get('ovs-dpdk', [])
+
+- name: attaching br_dpdk to br_int
+  become: true
+  shell: "ovs-vsctl add-port {{ ovs_dpdk_bridge_name }} patch-to-br-int -- set interface patch-to-br-int type=patch -- set interface patch-to-br-int options:peer=br-int-to-patch"
+  when: inventory_hostname in groups.get('ovs-dpdk', [])

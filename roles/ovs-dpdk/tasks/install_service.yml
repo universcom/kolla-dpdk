@@ -1,0 +1,51 @@
+---
+
+# check removed openvswitch-switch continers or not task required 
+
+- name: remove openvswitch-switch continers
+  become: True
+  command: "docker rm -f openvswitch_db openvswitch_vswitchd"
+
+
+- name: Ensurinig install pciutils
+  become: True
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name: pciutils
+    state: present
+
+- name: Ensurinig install crudini
+  become: True
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name: crudini
+    state: present
+
+- name: Ensurinig install numactl
+  become: True
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name: numactl
+    state: present
+
+- name: Ensurinig install openvswitch-switch-dpdk
+  become: True
+  apt: 
+    update_cache: yes
+    cache_valid_time: 3600
+    name: openvswitch-switch-dpdk
+    state: present
+  notify: 
+    - "Restart openvswitch-switch service"
+
+- name: Ensuring use openvswitch-switch-dpdk instead ovs-vswitchd
+  become: True
+  alternatives:
+    name: ovs-vswitchd
+    path: /usr/lib/openvswitch-switch-dpdk/ovs-vswitchd-dpdk
+  notify: 
+    - "Restart openvswitch-switch service"
+

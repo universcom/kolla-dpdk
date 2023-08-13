@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function configure_kernel_modules {
+    driver="$(get_value ovs_dpdk interface_driver)"
+    lsmod | grep -ws $driver > /dev/null || modprobe $driver
+    grep -ws $driver /etc/modules > /dev/null || echo $driver | tee -a /etc/modules
+}
+
+function get_value {
+    crudini --get $CONFIG_FILE $@
+}
+
+configure_kernel_modules

@@ -1,0 +1,13 @@
+---
+- import_tasks: config.yml
+
+- import_tasks: check-containers.yml
+
+- import_tasks: bootstrap.yml
+  when: inventory_hostname in groups['ovn-controller']
+
+- import_tasks: dpdk_integration.yml
+  when: (enable_ovs_dpdk | bool) and (inventory_hostname in groups['ovs-dpdk'])
+
+- name: Flush handlers
+  meta: flush_handlers
