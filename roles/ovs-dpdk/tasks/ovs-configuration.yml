@@ -1,0 +1,14 @@
+---
+- name: Copying OVS-configuration tool for dpdk
+  become: true
+  template:
+    src: config-ovs.sh.j2
+    dest: "{{ dpdk_conf_dir }}/config-ovs.sh"
+    mode: "0770"
+
+
+- name: Initial dpdk service 
+  become: True
+  command: "{{ dpdk_conf_dir }}/config-ovs.sh"
+  environment:
+    CONFIG_FILE: "{{ dpdk_conf_dir }}/ovs-dpdkctl.conf"

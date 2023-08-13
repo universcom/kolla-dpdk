@@ -1,0 +1,90 @@
+#!/bin/bash
+
+function init_OVS {
+    init_ovs_db
+    init_ovs_bridges
+    init_ovs_interfaces
+}
+
+function init_ovs_db {
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:pmd-cpu-mask="$(get_value ovs_dpdk_configs pmd_coremask)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask="$(get_value ovs_dpdk_configs ovs_coremask)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-mem-channels="$(get_value ovs_dpdk_configs mem_channels)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="$(get_value ovs_dpdk_configs socket_mem)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-hugepage-dir="$(get_value ovs_dpdk_configs hugepage_mountpoint)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-extra="--proc-type primary $(get_value ovs_dpdk_configs pci_whitelist)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-alloc-mem="$(get_value ovs_dpdk_configs alloc_mem)"
+    ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=True
+}
+
+
+function init_ovs_bridges {
+    declare -a bridges
+    raw_bridge_mappings=$(get_value ovs bridge_mappings)
+    bridge_mappings=( ${raw_bridge_mappings//,/ } )
+    for br in "${!bridge_mappings[@]}"; do
+        bridges+=( "$(echo ${bridge_mappings[$br]} | cut -f 2 -d ":")" )
+    done
+    bridges+=( "{{ ovs_dpdk_bridge_name  }}" )
+    for br in "${!bridges[@]}"; do
+        sudo ovs-vsctl --no-wait -- --may-exist add-br ${bridges[$br]} -- set Bridge ${bridges[$br]} datapath_type=netdev
+    done
+}
+
+function init_ovs_interfaces {
+    pci_port_pairs=''
+    for nic in $(list_dpdk_nics); do
+        address="$(get_value $nic address)"
+        if [ "$pci_port_pairs" == '' ]; then
+            pci_port_pairs="$address,$nic"
+        else
+            pci_port_pairs="$pci_port_pairs $address,$nic"
+        fi
+    done
+    pci_port_pairs="$(echo $pci_port_pairs | sort)"
+    for pair in  $pci_port_pairs; do
+        addr="$(echo $pair | cut -f 1 -d ",")"
+        nic="$(echo $pair | cut -f 2 -d ",")"
+        bridge="$(get_port_bridge $nic)"
+        ovs-vsctl --no-wait --may-exist add-port $bridge $nic \
+        -- set Interface  $nic type=dpdk \
+        -- set Interface  $nic options:dpdk-devargs=$addr\
+        -- set Interface  $nic options:n_rxq=4
+    done
+    ip link set up dev "{{ ovs_dpdk_bridge_name  }}"
+    ip a a $(get_value ovs_tunnel tunnel_interface_cidr) dev "{{ ovs_dpdk_bridge_name  }}"
+}
+
+function get_port_bridge {
+    for pair in $(get_value ovs port_mappings | tr ',' '\n'); do
+        nic=`echo $pair | cut -f 1 -d ":"`
+        if [[ "$nic" == "$1" ]]; then
+            bridge=`echo $pair | cut -f 2 -d ":"`
+            echo $bridge
+            return 0
+        fi
+    done
+
+    if [ $1 == $(get_value ovs_tunnel tunnel_interface) ]; then
+       echo "{{ ovs_dpdk_bridge_name  }}"
+    else
+       return 1
+    fi
+}
+
+function list_dpdk_nics {
+    declare -a dpdk_nics
+    for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+        dpdk_nics+="$nic "
+    done
+    dpdk_nics+=$(get_value ovs_tunnel tunnel_interface)
+    for nic in ${dpdk_nics[*]}; do
+        echo $nic;
+    done
+}
+
+function get_value {
+    crudini --get $CONFIG_FILE $@
+}
+
+init_OVS

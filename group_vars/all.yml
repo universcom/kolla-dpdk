@@ -1,0 +1,19 @@
+---
+###################
+# Ansible options
+###################
+###Added by Hamed and Soheil
+huge_pages: "16"
+huge_pages_size: "1G"
+huge_pages_auto_config: "false"
+
+dpdk_bridge_name: "br-dpdk"
+
+ovs_memory_channels: "4"
+ovs_socket_memory_per_numa: "1024"
+
+pmd_cpu_per_numa_isolated: "2"
+
+dpdk_alloc_mem: "2048"
+
+# Adding the mentioned configs to https://github.com/openstack/kolla-ansible/blob/stable/xena/ansible/group_vars/all.yml when you want integrate my code by kolla-ansible

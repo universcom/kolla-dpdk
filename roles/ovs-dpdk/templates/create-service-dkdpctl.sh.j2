@@ -1,0 +1,28 @@
+#!/bin/bash
+
+function install_service {
+    SERVICE_FILE="/etc/systemd/system/ovs-dpdkctl.service"
+    cat << EOF | tee "$SERVICE_FILE"
+
+[Unit]
+Description=configuration service for ovs-dpdk initilize for each rebooting.
+Before=network-pre.target
+After=syslog.target
+
+[Service]
+# Uncomment to enable debug logging.
+# Environment=OVS_DPDK_CTL_DEBUG=True
+Environment=CONFIG_FILE=$CONFIG_FILE
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/ovs-dpdkctl-bind-nics
+ExecStop=/bin/ovs-dpdkctl-unbind-nics 1
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+    systemctl daemon-reload
+    systemctl enable ovs-dpdkctl --now
+}
+install_service
