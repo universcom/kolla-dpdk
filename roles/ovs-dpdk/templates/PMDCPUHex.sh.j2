@@ -2,7 +2,7 @@
 
 function pmdcpuhex {
 
-python "{{ ovs_dpdk_conf_dir }}"/CPUConvertor.py $(numactl -H | grep cpus | cut -d ":" -f 2 | awk -v cpu="{{ pmd_cpu_per_numa }}" ' { for (x=1; x<=cpu; x++) printf( "%s,", $x )}' | sed 's/.$//')
+python3 "{{ ovs_dpdk_conf_dir }}"/CPUConvertor.py $(numactl -H | grep cpus | cut -d ":" -f 2 | awk -v cpu="{{ pmd_cpu_per_numa }}" ' { for (x=1; x<=cpu; x++) printf( "%s,", $x )}' | sed 's/.$//')
 
 }
 
