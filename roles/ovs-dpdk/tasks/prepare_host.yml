@@ -34,7 +34,7 @@
     fstype: hugetlbfs
     src: nodev
     path: "{{ ovs_dpdk_hugepage_mountpoint }}"
-    opts: "pagesize={{ huge_size }}"
+    opts: "pagesize={{ ovs_dpdk_hugepage_size }}"
 
 - name: Ensuring create utilities of dpdk directory
   become: true
