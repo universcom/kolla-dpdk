@@ -128,25 +128,25 @@
 
 - name: Adding kernel module
   become: True
-  command: "{{ dpdk_conf_dir }}/kernel-module-adding-dpdkctl.sh"
+  command: "{{ ovs_dpdk_conf_dir }}/kernel-module-adding-dpdkctl.sh"
   environment:
-    CONFIG_FILE: "{{ dpdk_conf_dir }}/ovs-dpdkctl.conf"
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
 
 - name: binding DPDK NICs to user-space
   become: True
-  command: "{{ dpdk_conf_dir }}/bind-nics-dpdkctl.sh"
+  command: "{{ ovs_dpdk_conf_dir }}/bind-nics-dpdkctl.sh"
   environment:
-    CONFIG_FILE: "{{ dpdk_conf_dir }}/ovs-dpdkctl.conf"
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
 
 - name: preparing unbind DPDK NICs from user-space 
   become: True
-  command: "{{ dpdk_conf_dir }}/unbind-nics-dpdkctl.sh 0"
+  command: "{{ ovs_dpdk_conf_dir }}/unbind-nics-dpdkctl.sh 0"
   environment:
-    CONFIG_FILE: "{{ dpdk_conf_dir }}/ovs-dpdkctl.conf"
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
 
 
 - name: Initial dpdk service 
   become: True
-  command: "{{ dpdk_conf_dir }}/create-service-dkdpctl.sh"
+  command: "{{ ovs_dpdk_conf_dir }}/create-service-dkdpctl.sh"
   environment:
-    CONFIG_FILE: "{{ dpdk_conf_dir }}/ovs-dpdkctl.conf"
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
