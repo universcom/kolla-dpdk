@@ -5,7 +5,7 @@
 ###Added or changed by Hamed and Soheil
 #added
 huge_pages: "16"
-huge_pages_size: "1G"
+huge_page_size: "1G"
 huge_pages_auto_config: "false"
 
 dpdk_bridge_name: "br-dpdk"
