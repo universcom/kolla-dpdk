@@ -3,7 +3,7 @@ ovs_bridge_mappings: "{% for bridge in neutron_bridge_name.split(',') %}physnet{
 ovs_port_mappings: "{% for bridge in neutron_bridge_name.split(',') %} {{ neutron_external_interface.split(',')[loop.index0] }}:{{ bridge }}{% if not loop.last %},{% endif %}{% endfor %}"
 
 ovs_dpdk_tunnel_interface_network: "{{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['network']}}/{{hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['netmask'] }}"
-ovs_dpdk_tunnel_interface_cidr: "{{ dpdk_tunnel_interface_address }}/{{ dpdk_tunnel_interface_network | ipaddr('prefix') }}"
+ovs_dpdk_tunnel_interface_cidr: "{{ dpdk_tunnel_interface_address }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}"
 ovs_dpdk_tunnel_interface: "{{ dpdk_tunnel_interface }}"
 
 ovs_dpdk_bridge_name: "{{ dpdk_bridge_name }}"
