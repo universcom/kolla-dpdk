@@ -24,7 +24,7 @@
 - name: Create ovs hugepage directory
   become: true
   file:
-    path: "{{ ovs_hugepage_mountpoint }}"
+    path: "{{ ovs_dpdk_hugepage_mountpoint }}"
     state: directory
 
 - name: Mounting ovs_hugepage_mountpoint 
@@ -33,7 +33,7 @@
     state: mounted 
     fstype: hugetlbfs
     src: nodev
-    path: "{{ ovs_hugepage_mountpoint }}"
+    path: "{{ ovs_dpdk_hugepage_mountpoint }}"
     opts: "pagesize={{ huge_size }}"
 
 - name: Ensuring create utilities of dpdk directory
