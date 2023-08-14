@@ -10,7 +10,7 @@ ovs_dpdk_bridge_name: "{{ dpdk_bridge_name }}"
 
 ovs_dpdk_mem_channels: "{{ ovs_memory_channels }}"
 ovs_dpdk_socket_mem_per_numa: "{{ ovs_socket_memory_per_numa }}"
-#ovs_dpdk_socket_mem: "{% for numa in numaList %}{{ ovs_socket_memory }}{% if not loop.last %},{% endif %}{% endfor %}"
+#ovs_dpdk_socket_mem_per_numa: "{% for numa in numaList %}{{ ovs_socket_memory }}{% if not loop.last %},{% endif %}{% endfor %}"
 ovs_dpdk_alloc_mem: "{{ dpdk_alloc_mem }}"
 
 ovs_dpdk_conf_dir: /etc/kolla/ovs_dpdk

@@ -16,7 +16,7 @@
 - name: registering ovs memory string for all numa
   become: true
   vars:
-    ovs_memory_string: "{% for numa in range(0,(NUMAs.stdout | int)) %}{{ ovs_dpdk_socket_mem }}{% if not loop.last %},{% endif %}{% endfor %}"
+    ovs_memory_string: "{% for numa in range(0,(NUMAs.stdout | int)) %}{{ ovs_dpdk_socket_mem_per_numa }}{% if not loop.last %},{% endif %}{% endfor %}"
   shell: "echo {{ ovs_memory_string }}"
   register: ovs_dpdk_socket_mem
 #To access ovs_socket_mem, useing "{{ ovs_dpdk_socket_mem.stdout }}"
