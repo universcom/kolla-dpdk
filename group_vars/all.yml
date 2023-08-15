@@ -6,7 +6,7 @@
 #added
 huge_pages: "16"
 huge_page_size: "1G"
-huge_pages_auto_config: "false"
+ovs_dpdk_huge_page_auto_config: "false"
 
 dpdk_bridge_name: "br-dpdk"
 
