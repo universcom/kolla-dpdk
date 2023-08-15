@@ -2,9 +2,9 @@
 - import_tasks: install_service.yml
 - import_tasks: prepare_host.yml
 - import_tasks: update_grub.yml
-- import_tasks: ovs-configuration.yml
 - name: Flush Handlers
   meta: flush_handlers
+- import_tasks: ovs-configuration.yml
 
 
 ###### last Code #####
