@@ -52,7 +52,7 @@ function init_ovs_interfaces {
         -- set Interface  $nic options:n_rxq=4
     done
     ip link set up dev "{{ ovs_dpdk_bridge_name  }}"
-    ip a a $(get_value ovs_tunnel tunnel_interface_cidr) dev "{{ ovs_dpdk_bridge_name  }}"
+    ip a replace $(get_value ovs_tunnel tunnel_interface_cidr) dev "{{ ovs_dpdk_bridge_name  }}"
 }
 
 function get_port_bridge {
