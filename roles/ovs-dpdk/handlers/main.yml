@@ -30,3 +30,10 @@
     name: ovs-dpdkctl
     state: restarted
     enabled: true
+  notify: "Wait for system to ready"
+
+- name: Wait for system to ready
+  wait_for:
+    host: "{{ inventory_hostname }}"
+    timeout: 10
+    sleep: 3
