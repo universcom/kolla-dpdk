@@ -31,6 +31,14 @@
     name: numactl
     state: present
 
+- name: Ensurinig install python3
+  become: True
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+    name: python3
+    state: present
+
 - name: Ensurinig install openvswitch-switch-dpdk
   become: True
   apt: 
