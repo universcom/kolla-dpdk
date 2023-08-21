@@ -1,10 +1,17 @@
 ---
 
 # check removed openvswitch-switch continers or not task required 
+- name: Stop and Remove openvswitch_db continer
+  become: true
+  docker_container:
+    name: openvswitch_db
+    state: absent
 
-- name: remove openvswitch-switch continers
-  become: True
-  command: "docker rm -f openvswitch_db openvswitch_vswitchd"
+- name: Stop and Remove openvswitch_vswitchd continer
+  become: true
+  docker_container:
+    name: openvswitch_vswitchd
+    state: absent
 
 
 - name: Ensurinig install pciutils
