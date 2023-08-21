@@ -1,13 +1,5 @@
 ---
 
-- name: Ensuring ovs-system-id correctly added
-  become: true
-  template:
-    src: system-id.conf.j2
-    dest: "/etc/openvswitch/system-id.conf"
-  notify: 
-      - "Restart openvswitch-switch service"
-
 - name: Getting number of host NUMAs
   become: true
   shell: "numactl -H | grep cpu | wc -l"
