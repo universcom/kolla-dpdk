@@ -14,6 +14,7 @@
     ovn_mappings: "{% for bridge in neutron_bridge_name.split(',') %}physnet{{ loop.index0 + 1 }}:{{ bridge }}{% if not loop.last %},{% endif %}{% endfor %}"
     ovn_macs: "{% for bridge in neutron_bridge_name.split(',') %}physnet{{ loop.index0 + 1 }}:{{ ovn_base_mac | random_mac(seed=inventory_hostname+bridge) }}{% if not loop.last %},{% endif %}{% endfor %}"
     ovn_cms_opts: "{{ 'enable-chassis-as-gw' if inventory_hostname in groups['ovn-controller-network'] else '' }}"
+    encap_ip: "{% if (enable_ovs_dpdk | bool) and (inventory_hostname in groups['ovs-dpdk']) %}{{ hostvars[inventory_hostname].ansible_facts[( ovs_dpdk_bridge_name | replace('-','_') )]['ipv4']['address'] }}{% else %}{{ hostvars[inventory_hostname].ansible_facts[tunnel_interface]['ipv4']['address'] }}{% endif %}"
   become: true
   kolla_toolbox:
     user: root
@@ -27,7 +28,7 @@
       state: "{{ item.state | default('present') }}"
   loop:
     - { name: system-id, value: "{{ inventory_hostname }}", state: present }
-    - { name: ovn-encap-ip, value: "{{ tunnel_interface_address }}" }
+    - { name: ovn-encap-ip, value: "{{ encap_ip }}" }
     - { name: ovn-encap-type, value: geneve }
     - { name: ovn-remote, value: "{{ ovn_sb_connection }}" }
     - { name: ovn-remote-probe-interval, value: "{{ ovn_remote_probe_interval }}" }
