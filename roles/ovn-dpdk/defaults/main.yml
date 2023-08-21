@@ -33,6 +33,7 @@ ovn_services:
 ####################
 # Docker
 ####################
+ovs_dpdk_bridge_name: "{% if (enable_ovs_dpdk | bool) and (inventory_hostname in groups['ovs-dpdk'])%}{{ dpdk_bridge_name }}{% else %}br-dpdk{% endif %}"
 ovn_install_type: "{{ kolla_install_type }}"
 ovn_tag: "{{ openstack_tag }}"
 
