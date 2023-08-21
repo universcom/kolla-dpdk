@@ -1,6 +1,6 @@
 stdio_handler = "file"
 
-user ={% if ( enable_ovs_dpdk | bool ) and ( inventory_hostname in groups['ovs-dpdk'] ) %} "root" {% else %} "nova" {% endif %}
+user = "{% if ( enable_ovs_dpdk | bool ) and ( inventory_hostname in groups['ovs-dpdk'] ) %}root{% else %}nova{% endif %}"
 group = "nova"
 
 max_files =  {{ qemu_max_files }}
