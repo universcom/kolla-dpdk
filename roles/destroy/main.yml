@@ -1,0 +1,2 @@
+- include_tasks: ovs_dpdk_cleanup.yml
+  when: (enable_ovs_dpdk | bool) and (inventory_hostname in groups['ovs-dpdk'])
