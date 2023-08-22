@@ -675,7 +675,7 @@
 - name: Apply role openvswitch
   gather_facts: false
   hosts:
-    - openvswitch
+    - ovs-dpdk
     - '&enable_openvswitch_True_enable_ovs_dpdk_False'
   serial: '{{ kolla_serial|default("0") }}'
   roles:
