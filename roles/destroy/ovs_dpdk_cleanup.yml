@@ -1,0 +1,11 @@
+---
+- name: delete role ovs-dpdk
+  gather_facts: false
+  vars:
+    kolla_action: destroy
+  hosts:
+    - ovs-dpdk
+  roles:
+    - { role: ovs-dpdk,
+        tags: ovs-dpdk,
+        when: "(enable_openvswitch | bool) and (enable_ovs_dpdk | bool)"}
