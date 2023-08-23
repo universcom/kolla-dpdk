@@ -6,7 +6,7 @@
 
 - name: Stop and Disabled ovs-dpdkctl Service
   become: true
-  service: name=ovs-dpdkctl state=stopped enable=false
+  service: name=ovs-dpdkctl state=stopped enabled=false
   when: service_status.stat.exists
   
 - name: Deleted ovs-dpdkctl service
@@ -98,7 +98,7 @@
     backup: true
     path: /etc/default/grub
     insertafter: "^GRUB_CMDLINE_LINUX"
-    line: 'GRUB_CMDLINE_LINUX_DEFAULT=\"cgroup_enable=quiet splashmemory swapaccount=1\"'
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="cgroup_enable=quiet splash memory swapaccount=1"'
     state: present
     firstmatch: yes
   when: grub_cmdline_check.found == 0
