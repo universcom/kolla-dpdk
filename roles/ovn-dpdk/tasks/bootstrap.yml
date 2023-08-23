@@ -40,4 +40,4 @@
 - name: set manager for open_vswitch
   become: true
   shell: "ovs-vsctl set-manager ptcp:6640:127.0.0.1"
-  when: inventory_hostname in groups.get('ovn-controller', [])
+  when: inventory_hostname in groups.get('ovs-dpdk', [])
