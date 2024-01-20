@@ -1,4 +1,3 @@
----
 
 - name: Getting number of host NUMAs
   become: true
@@ -19,10 +18,10 @@
     path: "{{ ovs_dpdk_hugepage_mountpoint }}"
     state: directory
 
-- name: Mounting ovs_hugepage_mountpoint 
+- name: Mounting ovs_hugepage_mountpoint
   become: true
   mount:
-    state: mounted 
+    state: mounted
     fstype: hugetlbfs
     src: nodev
     path: "{{ ovs_dpdk_hugepage_mountpoint }}"
@@ -34,14 +33,14 @@
     path: "{{ ovs_dpdk_conf_dir }}"
     state: directory
 
-- name: Copying cpu convertor tool 
+- name: Copying cpu convertor tool
   become: true
   template:
     src: CPUConvertor.py.j2
     dest: "{{ ovs_dpdk_conf_dir }}/CPUConvertor.py"
     mode: "0770"
 
-- name: Copying get CPUhex tool for PMD 
+- name: Copying get CPUhex tool for PMD
   become: true
   template:
     src: PMDCPUHex.sh.j2
@@ -97,6 +96,13 @@
     dest: "{{ ovs_dpdk_conf_dir }}/create-service-dkdpctl.sh"
     mode: "0770"
 
+- name: Copying dpdk-hugepage.py to destination
+  become: true
+  template:
+    src: dpdk-hugepages.py.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/dpdk-hugepages.py"
+    mode: "0770"
+
 - name: Geting CPU hex for PMD
   become: True
   command: "{{ ovs_dpdk_conf_dir }}/PMDCPUHex.sh"
@@ -130,14 +136,14 @@
   environment:
     CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
 
-- name: preparing unbind DPDK NICs from user-space 
+- name: preparing unbind DPDK NICs from user-space
   become: True
   command: "{{ ovs_dpdk_conf_dir }}/unbind-nics-dpdkctl.sh 0"
   environment:
     CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
 
 
-- name: Initial dpdk service 
+- name: Initial dpdk service
   become: True
   command: "{{ ovs_dpdk_conf_dir }}/create-service-dkdpctl.sh"
   environment:
