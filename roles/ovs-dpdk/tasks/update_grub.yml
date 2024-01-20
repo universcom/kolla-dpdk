@@ -6,7 +6,7 @@
 
 - name: Update grub varibale
   register: cmdline_linux
-  shell: "echo pci=realloc=on iommu=pt intel_iommu=on transparent_hugepage=never default_hugepagesz={{ ovs_dpdk_hugepage_size }} hugapagesz={{ ovs_dpdk_hugepage_size }} hugepages={{ ovs_dpdk_hugepages }} isolcpu={{ CpuIsolated.stdout }}"
+  shell: "echo pci=realloc=on iommu=pt intel_iommu=on transparent_hugepage=never default_hugepagesz={{ ovs_dpdk_hugepage_size }} hugepagesz={{ ovs_dpdk_hugepage_size }} hugepages={{ ovs_dpdk_hugepages }} isolcpu={{ CpuIsolated.stdout }}"
 
 #Transparent Huge Pages (THP) is an alternative solution to HugeTLB. With THP, 
 #the kernel automatically assigns huge pages to processes, so huge pages do not need to be reserved manually.
