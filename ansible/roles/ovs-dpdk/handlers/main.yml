@@ -1,102 +1,40 @@
 ---
-- name: Restart ovsdpdk-db container
-  vars:
-    service_name: "ovsdpdk-db"
-    service: "{{ ovsdpdk_services[service_name] }}"
-  become: true
-  kolla_docker:
-    action: "recreate_or_restart_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ service.container_name }}"
-    image: "{{ service.image }}"
-    volumes: "{{ service.volumes }}"
-    dimensions: "{{ service.dimensions }}"
-  when:
-    - kolla_action != "config"
-  notify:
-    - Waiting the ovs db service to be ready
-    - Ensuring ovsdpdk bridges are properly setup indexed
-    - Restart ovsdpdk-vswitchd container
-    - Ensuring ovsdpdk bridges are properly setup named
-    - wait for dpdk tunnel ip
-    - OVS-DPDK gather facts
+- name: Restart openvswitch-switch service
+  become: True 
+  service: 
+    name: openvswitch-switch
+    state: restarted
+    enabled: true
 
-- name: Waiting the ovs db service to be ready
-  vars:
-    service_name: "ovsdpdk-db"
-    service: "{{ ovsdpdk_services[service_name] }}"
-  become: true
-  command: "{{ kolla_container_engine }} exec {{ service.container_name }} ovs-vsctl --no-wait show"
-  register: check_result
-  until: check_result is success
-  changed_when: False
-  retries: 30
-  delay: 2
+- name: Update grub
+  become: true 
+  command:
+    cmd: >
+      /usr/sbin/update-grub
+  notify: "Reboot host and wait for it to restart"
 
-- name: Ensuring ovsdpdk bridges are properly setup indexed
-  vars:
-    service_name: "ovsdpdk-db"
-    service: "{{ ovsdpdk_services[service_name] }}"
+- name: Reboot host and wait for it to restart
   become: true
-  command: >
-    {{ kolla_container_engine }} exec {{ service.container_name }} /bin/sh -c
-    'CONFIG_FILE={{ container_config_directory }}/ovs-dpdkctl.conf {{ container_config_directory }}/ovs-dpdkctl.sh init'
-  register: status
-  changed_when: status.stdout.find('changed') != -1
-  when:
-    - (inventory_hostname in groups['compute']
-       or (enable_manila | bool and inventory_hostname in groups['manila-share'])
-       or inventory_hostname in groups['neutron-dhcp-agent']
-       or inventory_hostname in groups['neutron-l3-agent']
-       or inventory_hostname in groups['neutron-metadata-agent'])
-    - ovs_physical_port_policy == 'indexed'
+  reboot:
+    msg: "Reboot initiated by Ansible"
+    connect_timeout: 5
+    reboot_timeout: 600
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: whoami
+  notify: "Restart service ovs-dpdkctl"
 
-- name: Restart ovsdpdk-vswitchd container
-  vars:
-    service_name: "ovsdpdk-vswitchd"
-    service: "{{ ovsdpdk_services[service_name] }}"
+- name: Restart service ovs-dpdkctl
   become: true
-  kolla_docker:
-    action: "recreate_or_restart_container"
-    common_options: "{{ docker_common_options }}"
-    name: "{{ service.container_name }}"
-    image: "{{ service.image }}"
-    volumes: "{{ service.volumes }}"
-    privileged: "{{ service.privileged | default(True) }}"
-    dimensions: "{{ service.dimensions }}"
-  when:
-    - kolla_action != "config"
+  service: 
+    name: ovs-dpdkctl
+    state: restarted
+    enabled: true
+  notify: "Wait for system to ready"
 
-- name: Ensuring ovsdpdk bridges are properly setup named
-  vars:
-    service_name: "ovsdpdk-db"
-    service: "{{ ovsdpdk_services[service_name] }}"
-  become: true
-  command: >
-    {{ kolla_container_engine }} exec {{ service.container_name }} /bin/sh -c
-    'CONFIG_FILE={{ container_config_directory }}/ovs-dpdkctl.conf {{ container_config_directory }}/ovs-dpdkctl.sh init'
-  register: status
-  changed_when: status.stdout.find('changed') != -1
-  when:
-    - (inventory_hostname in groups['compute']
-       or (enable_manila | bool and inventory_hostname in groups['manila-share'])
-       or inventory_hostname in groups['neutron-dhcp-agent']
-       or inventory_hostname in groups['neutron-l3-agent']
-       or inventory_hostname in groups['neutron-metadata-agent'])
-    - ovs_physical_port_policy == 'named'
-
-- name: Wait for dpdk tunnel ip
+- name: Wait for system to ready
   wait_for:
-    host: "{{ dpdk_tunnel_interface_address }}"
-    timeout: 300
-    sleep: 5
+    host: "{{ inventory_hostname }}"
+    timeout: 10
+    sleep: 3
 
-- name: OVS-DPDK gather facts
-  setup:
-    filter: ansible_*
-  when:
-    - (inventory_hostname in groups['compute']
-       or (enable_manila | bool and inventory_hostname in groups['manila-share'])
-       or inventory_hostname in groups['neutron-dhcp-agent']
-       or inventory_hostname in groups['neutron-l3-agent']
-       or inventory_hostname in groups['neutron-metadata-agent'])

@@ -1,7 +1,12 @@
 ---
-- import_tasks: config.yml
-
-- import_tasks: check-containers.yml
-
+- import_tasks: install_service.yml
 - name: Flush Handlers
   meta: flush_handlers
+
+- import_tasks: prepare_host.yml
+
+- import_tasks: update_grub.yml
+- name: Flush Handlers
+  meta: flush_handlers
+  
+- import_tasks: ovs-configuration.yml

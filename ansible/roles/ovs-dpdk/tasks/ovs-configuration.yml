@@ -1,0 +1,21 @@
+- name: Copying OVS-configuration tool for dpdk
+  become: true
+  template:
+    src: config-ovs.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/config-ovs.sh"
+    mode: "0770"
+
+
+- name: Initial dpdk service
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/config-ovs.sh"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
+
+
+- name: Copy netplan dpdk interface file
+  become: true
+  template:
+    src: 01-dpdk-interface.yaml.j2
+    dest: "/etc/netplan/01-dpdk-interface.yaml"
+    mode: "0770"
