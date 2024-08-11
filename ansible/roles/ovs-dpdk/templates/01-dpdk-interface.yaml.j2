@@ -1,0 +1,7 @@
+network:
+  ethernets:
+    {{ dpdk_bridge_name }}:
+      addresses:
+      - {{ ovs_dpdk_tunnel_interface_cidr }}
+      mtu: {{ dpdk_interface_mtu }}
+      link-local: []

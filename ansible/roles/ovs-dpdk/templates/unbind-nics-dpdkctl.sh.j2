@@ -1,0 +1,73 @@
+#!/bin/bash
+
+function unbind_nics {
+    for nic in $(list_dpdk_nics); do
+        device_address="$(get_value $nic address)"
+        original_driver="$(get_value $nic original_driver)"
+        dpdk_driver="$(get_value $nic dpdk_driver)"
+        current_driver="$(get_driver_by_address $device_address)"
+        if [ "$current_driver" == "$dpdk_driver" ]; then
+            unbind_nic $device_address $current_driver
+            bind_nic $device_address $original_driver
+        fi
+    done
+}
+
+
+function unbind_nic {
+    echo $1 > /sys/bus/pci/drivers/$2/unbind
+    echo > /sys/bus/pci/devices/$1/driver_override
+}
+
+
+function bind_nic {
+    echo $2 > /sys/bus/pci/devices/$1/driver_override
+    echo $1 > /sys/bus/pci/drivers/$2/bind
+}
+
+
+function is_set {
+    output=$(crudini --get $CONFIG_FILE $* &> /dev/null ) && [ -n "$(crudini --get $CONFIG_FILE $*)" ]; echo $?
+}
+
+
+function set_value {
+    crudini --set $CONFIG_FILE $1 $2 "$3"
+}
+
+
+function get_value {
+    crudini --get $CONFIG_FILE $@
+}
+
+function del_value {
+    crudini --del $CONFIG_FILE $@
+}
+
+
+function get_driver_by_address {
+    ls /sys/bus/pci/devices/$1/driver -al | awk '{n=split($NF,a,"/"); print a[n]}'
+}
+
+
+function list_dpdk_nics {
+    declare -a dpdk_nics
+    for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+        dpdk_nics+="$nic "
+    done
+    dpdk_nics+=$(get_value ovs_tunnel tunnel_interface)
+    for nic in ${dpdk_nics[*]}; do
+        echo $nic;
+    done
+}
+
+
+if [ $1 == 1 ]; then 
+    unbind_nics
+fi
+
+FULL_PATH=$(realpath "${BASH_SOURCE[0]}")
+if [ ! -e /bin/ovs-dpdkctl-unbind-nics ]; then
+        cp "$FULL_PATH" /bin/ovs-dpdkctl-unbind-nics
+        chmod +x /bin/ovs-dpdkctl-unbind-nics
+fi

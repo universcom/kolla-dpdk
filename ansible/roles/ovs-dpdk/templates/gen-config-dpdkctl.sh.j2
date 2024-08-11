@@ -1,0 +1,78 @@
+#!/bin/bash
+
+
+function gen_configs {
+    del_config
+    touch $CONFIG_FILE
+    set_value ovs bridge_mappings "{{ ovs_bridge_mappings }}"
+    set_value ovs port_mappings "{{ ovs_port_mappings }}"
+    set_value ovs_tunnel tunnel_interface_cidr "{{ ovs_dpdk_tunnel_interface_cidr }}"
+    set_value ovs_tunnel tunnel_interface "{{ ovs_dpdk_tunnel_interface }}"
+    set_value ovs_dpdk_configs ovs_coremask ${ovs_coremask:-"0x1"}
+    set_value ovs_dpdk_configs pmd_coremask ${pmd_coremask:-"0x2"}
+    set_value ovs_dpdk_configs mem_channels "{{ ovs_dpdk_mem_channels }}"
+    set_value ovs_dpdk_configs socket_mem ${ovs_socket_mem:-2048}
+    set_value ovs_dpdk_configs alloc_mem "{{ ovs_dpdk_alloc_mem }}"
+    set_value ovs_dpdk_configs interface_driver "{{ ovs_dpdk_interface_driver }}"
+    set_value ovs_dpdk_configs hugepage_mountpoint "{{ ovs_dpdk_hugepage_mountpoint }}"
+
+    ls -al /sys/class/net/* | awk '$0 ~ /pci/ {n=split($NF,a,"/"); print "\n[" a[n] "]\naddress = " a[n-2]  "\noriginal_driver = "  "\ndpdk_driver = "}' >> $CONFIG_FILE
+
+    for nic in $(get_value | grep -v ovs); do
+        set_value $nic original_driver $(get_driver_by_address $(get_value $nic address))
+	    set_value $nic dpdk_driver $(get_value ovs_dpdk_configs interface_driver)
+    done
+
+    set_value ovs_dpdk_configs pci_whitelist "${pci_whitelist:-$(generate_pciwhitelist)}"
+}
+
+
+function del_config { 
+    rm -f $CONFIG_FILE
+}
+
+
+function set_value {
+    crudini --set $CONFIG_FILE $1 $2 "$3"
+}
+
+
+function get_value {
+    crudini --get $CONFIG_FILE $@
+}
+
+
+function get_driver_by_address {
+    ls /sys/bus/pci/devices/$1/driver -al | awk '{n=split($NF,a,"/"); print a[n]}'
+}
+
+
+function list_ovs_nics {
+    for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+        echo $nic;
+    done
+}
+
+function list_dpdk_nics {
+    echo $(get_value ovs_tunnel tunnel_interface)
+}
+
+
+function generate_pciwhitelist {
+    _Whitelist=''
+    for nic in $(list_ovs_nics); do
+        address="$(get_value $nic address)"
+        if [ "$_Whitelist" == '' ]; then
+            _Whitelist="-w $address"
+        else
+            _Whitelist="$_Whitelist -w $address"
+        fi
+    done
+    address="$(get_value $(list_dpdk_nics) address)"
+    _Whitelist="$_Whitelist -w $address"
+    echo $_Whitelist
+}
+
+if [ ! -e "$CONFIG_FILE" ]; then
+        gen_configs
+fi

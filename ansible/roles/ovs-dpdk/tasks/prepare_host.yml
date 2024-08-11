@@ -1,0 +1,144 @@
+---
+
+- name: Getting number of host NUMAs
+  become: true
+  shell: "numactl -H | grep cpu | wc -l"
+  register: NUMAs
+
+- name: registering ovs memory string for all numa
+  become: true
+  vars:
+    ovs_memory_string: "{% for numa in range(0,(NUMAs.stdout | int)) %}{{ ovs_dpdk_socket_mem_per_numa }}{% if not loop.last %},{% endif %}{% endfor %}"
+  shell: "echo {{ ovs_memory_string }}"
+  register: ovs_dpdk_socket_mem
+#To access ovs_socket_mem, useing "{{ ovs_dpdk_socket_mem.stdout }}"
+
+- name: Create ovs hugepage directory
+  become: true
+  file:
+    path: "{{ ovs_dpdk_hugepage_mountpoint }}"
+    state: directory
+
+- name: Mounting ovs_hugepage_mountpoint 
+  become: true
+  mount:
+    state: mounted 
+    fstype: hugetlbfs
+    src: nodev
+    path: "{{ ovs_dpdk_hugepage_mountpoint }}"
+    opts: "pagesize={{ ovs_dpdk_hugepage_size }}"
+
+- name: Ensuring create utilities of dpdk directory
+  become: true
+  file:
+    path: "{{ ovs_dpdk_conf_dir }}"
+    state: directory
+
+- name: Copying cpu convertor tool 
+  become: true
+  template:
+    src: CPUConvertor.py.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/CPUConvertor.py"
+    mode: "0770"
+
+- name: Copying get CPUhex tool for PMD 
+  become: true
+  template:
+    src: PMDCPUHex.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/PMDCPUHex.sh"
+    mode: "0770"
+
+- name: Copying get CPUhex tool for Lcore
+  become: true
+  template:
+    src: LcoreCPUHex.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/LcoreCPUHex.sh"
+    mode: "0770"
+
+- name: Copying get CPU Isolated tool
+  become: true
+  template:
+    src: CpuIsolated.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/CpuIsolated.sh"
+    mode: "0770"
+
+- name: Copying Gen configuration tool for dpdk
+  become: true
+  template:
+    src: gen-config-dpdkctl.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/gen-config-dpdkctl.sh"
+    mode: "0770"
+
+- name: Copying Kernel module configuration tool for dpdk
+  become: true
+  template:
+    src: kernel-module-adding-dpdkctl.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/kernel-module-adding-dpdkctl.sh"
+    mode: "0770"
+
+- name: Copying bind NICs tool for dpdk
+  become: true
+  template:
+    src: bind-nics-dpdkctl.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/bind-nics-dpdkctl.sh"
+    mode: "0770"
+
+- name: Copying unbind NICs tool for dpdk
+  become: true
+  template:
+    src: unbind-nics-dpdkctl.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/unbind-nics-dpdkctl.sh"
+    mode: "0770"
+
+- name: Copying Service managment tool for dpdk
+  become: true
+  template:
+    src: create-service-dkdpctl.sh.j2
+    dest: "{{ ovs_dpdk_conf_dir }}/create-service-dkdpctl.sh"
+    mode: "0770"
+
+- name: Geting CPU hex for PMD
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/PMDCPUHex.sh"
+  register: PMDCpuHexIsolated
+# TO access PMDCpuHexIsolated use {{ PMDCpuHexIsolated.stdout }}
+
+- name: Geting CPU hex for Lcore
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/LcoreCPUHex.sh"
+  register: LcoreCpuHexIsolated
+# TO access LcoreCpuHexIsolated use {{ LcoreCpuHexIsolated.stdout }}
+
+- name: Generating NICs specification file (dpdk.conf file generator)
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/gen-config-dpdkctl.sh"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
+    pmd_coremask: "{{ PMDCpuHexIsolated.stdout }}"
+    ovs_coremask: "{{ LcoreCpuHexIsolated.stdout }}"
+    ovs_socket_mem: "{{ ovs_dpdk_socket_mem.stdout }}"
+
+- name: Adding kernel module
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/kernel-module-adding-dpdkctl.sh"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
+
+- name: binding DPDK NICs to user-space
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/bind-nics-dpdkctl.sh"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
+
+- name: preparing unbind DPDK NICs from user-space 
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/unbind-nics-dpdkctl.sh 0"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"
+
+
+- name: Initial dpdk service 
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/create-service-dkdpctl.sh"
+  environment:
+    CONFIG_FILE: "{{ ovs_dpdk_conf_dir }}/ovs-dpdkctl.conf"

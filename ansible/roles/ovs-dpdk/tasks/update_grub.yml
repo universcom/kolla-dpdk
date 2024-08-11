@@ -1,0 +1,44 @@
+- name: Getting CPU isolated
+  become: True
+  command: "{{ ovs_dpdk_conf_dir }}/CpuIsolated.sh"
+  register: CpuIsolated
+# TO access PMDCpuHexIsolated use {{ CpuIsolated.stdout }}
+
+- name: Update grub varibale
+  register: cmdline_linux
+  shell: "echo pci=realloc=on default_hugepagesz={{ ovs_dpdk_hugepage_size }} hugepagesz={{ ovs_dpdk_hugepage_size }} hugepages={{ ovs_dpdk_hugepages }} iommu=pt intel_iommu=on transparent_hugepage=never isolcpu={{ CpuIsolated.stdout }}"
+#Transparent Huge Pages (THP) is an alternative solution to HugeTLB. With THP, 
+#the kernel automatically assigns huge pages to processes, so huge pages do not need to be reserved manually.
+
+
+- name: check if cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT="{{ cmdline_linux.stdout_lines[0] }}"'
+    state: absent
+  register: grub_cmdline_check
+  check_mode: true
+  changed_when: false
+
+- name: Delete if cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT'
+    state: absent
+  when: grub_cmdline_check.found == 0
+
+- name: add cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    insertafter: "^GRUB_CMDLINE_LINUX"
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="{{ cmdline_linux.stdout_lines[0] }}"'
+    state: present
+    firstmatch: yes
+  when: grub_cmdline_check.found == 0
+  notify: "Update grub"

@@ -1,0 +1,129 @@
+---
+- name: Checked if Service ovs-dpdkctl Exists
+  become: true
+  stat: path=/etc/systemd/system/ovs-dpdkctl.service
+  register: service_status
+
+- name: Stop and Disabled ovs-dpdkctl Service
+  become: true
+  service: name=ovs-dpdkctl state=stopped enabled=false
+  when: service_status.stat.exists
+  
+- name: Deleted ovs-dpdkctl service
+  become: true
+  file:
+    state: absent
+    path: /etc/systemd/system/ovs-dpdkctl.service
+  when: service_status.stat.exists
+
+- name: Checked if bind_nic command Exists
+  become: true
+  stat: path=/bin/ovs-dpdkctl-bind-nics
+  register: bind_nic_command_status
+
+- name: Deleted bind_nics files
+  become: true
+  file:
+    state: absent
+    path: "/bin/ovs-dpdkctl-bind-nics"
+  when: bind_nic_command_status.stat.exists
+
+- name: Checked if unbind_nic command Exists
+  become: true
+  stat: path=/bin/ovs-dpdkctl-unbind-nics
+  register: unbind_nic_command_status
+
+- name: Deleted unbind_nics files
+  become: true
+  file:
+    state: absent
+    path: "/bin/ovs-dpdkctl-unbind-nics"
+  when: unbind_nic_command_status.stat.exists
+
+- name: Removed dpdk related files and scripts
+  become: true
+  file:
+    state: absent
+    path: "{{ ovs_dpdk_conf_dir }}"
+
+- name: purge ovs-dpdk serivce
+  become: true
+  apt:
+    name: openvswitch-switch-dpdk
+    state: absent
+    purge: true
+
+- name: purge ovs 
+  become: true
+  apt:
+    name: openvswitch-switch
+    state: absent
+    purge: true
+
+- name: remove ovs database
+  become: true
+  file:
+    state: absent
+    path: /var/lib/openvswitch/
+
+- name: remove ovs run files an PID 
+  become: true
+  file:
+    state: absent
+    path: /var/run/openvswitch/
+
+- name: check if cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT=cgroup_enable=memory swapaccount=1'
+    state: absent
+  register: grub_cmdline_check
+  check_mode: true
+  changed_when: false
+
+- name: Delete if cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT'
+    state: absent
+  when: grub_cmdline_check.found == 0
+
+- name: add cmdline_linux is configured in the boot command
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/default/grub
+    insertafter: "^GRUB_CMDLINE_LINUX"
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash cgroup_enable=memory swapaccount=1"'
+    state: present
+    firstmatch: yes
+  when: grub_cmdline_check.found == 0
+
+- name: Update OS grub 
+  become: true 
+  command:
+    cmd: >
+      /usr/sbin/update-grub
+  when: grub_cmdline_check.found == 0
+
+- name: Delete hugepage monunt point form fstab file
+  become: true
+  lineinfile:
+    backup: true
+    path: /etc/fstab
+    regexp: '^nodev'
+    state: absent
+
+- name: Rebooting server
+  become: true
+  reboot:
+    msg: "Reboot initiated by Ansible"
+    connect_timeout: 5
+    reboot_timeout: 600
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: whoami
