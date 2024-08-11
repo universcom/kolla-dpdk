@@ -1,0 +1,262 @@
+---
+- name: Ensuring config directories exist
+  vars:
+    service_name: "{{ item.0.service_name }}"
+    service: "{{ common_services[service_name] }}"
+  file:
+    path: "{{ node_config_directory }}/{{ item.1 }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  with_subelements:
+    - - service_name: "cron"
+        paths:
+          - "cron"
+      - service_name: "fluentd"
+        paths:
+          - "fluentd"
+      - service_name: "kolla-toolbox"
+        paths:
+          - "kolla-toolbox"
+    - paths
+  when: service | service_enabled_and_mapped_to_host
+
+- include_tasks: copy-certs.yml
+  when:
+    - kolla_copy_ca_into_containers | bool
+
+- name: Copying over config.json files for services
+  template:
+    src: "{{ item.key }}.json.j2"
+    dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
+    mode: "0660"
+  become: true
+  when: item.value | service_enabled_and_mapped_to_host
+  with_dict: "{{ common_services }}"
+  notify:
+    - "Restart {{ item.key }} container"
+
+- name: Find custom fluentd input config files
+  find:
+    path: "{{ node_custom_config }}/fluentd/input"
+    pattern: "*.conf"
+  run_once: True
+  register: find_custom_fluentd_inputs
+  delegate_to: localhost
+  when: common_services.fluentd.enabled | bool
+
+- name: Find custom fluentd filter config files
+  find:
+    path: "{{ node_custom_config }}/fluentd/filter"
+    pattern: "*.conf"
+  run_once: True
+  register: find_custom_fluentd_filters
+  delegate_to: localhost
+  when: common_services.fluentd.enabled | bool
+
+- name: Find custom fluentd format config files
+  find:
+    path: "{{ node_custom_config }}/fluentd/format"
+    pattern: "*.conf"
+  run_once: True
+  register: find_custom_fluentd_formats
+  delegate_to: localhost
+  when: common_services.fluentd.enabled | bool
+
+- name: Find custom fluentd output config files
+  find:
+    path: "{{ node_custom_config }}/fluentd/output"
+    pattern: "*.conf"
+  run_once: True
+  register: find_custom_fluentd_outputs
+  delegate_to: localhost
+  when: common_services.fluentd.enabled | bool
+
+- name: Copying over td-agent.conf
+  vars:
+    log_direct_to_elasticsearch: "{{ elasticsearch_address is defined }}"
+    log_direct_to_opensearch: >-
+      {{ enable_opensearch | bool or
+           ( opensearch_address != kolla_internal_fqdn ) }}
+    # Inputs
+    fluentd_input_files: "{{ default_input_files_enabled | customise_fluentd(customised_input_files) }}"
+    default_input_files_enabled: "{{ default_input_files | selectattr('enabled') | map(attribute='name') | list }}"
+    default_input_files:
+      - name: "conf/input/00-global.conf.j2"
+        enabled: true
+      - name: "conf/input/01-syslog.conf.j2"
+        enabled: true
+      - name: "conf/input/02-mariadb.conf.j2"
+        enabled: true
+      - name: "conf/input/03-rabbitmq.conf.j2"
+        enabled: true
+      - name: "conf/input/04-openstack-wsgi.conf.j2"
+        enabled: true
+      - name: "conf/input/05-libvirt.conf.j2"
+        enabled: "{{ enable_nova | bool and enable_nova_libvirt_container | bool }}"
+      - name: "conf/input/08-prometheus.conf.j2"
+        enabled: "{{ enable_prometheus_fluentd_integration | bool }}"
+      - name: "conf/input/10-openvswitch.conf.j2"
+        enabled: true
+    customised_input_files: "{{ find_custom_fluentd_inputs.files | map(attribute='path') | list }}"
+    # Filters
+    fluentd_filter_files: "{{ default_filter_files | customise_fluentd(customised_filter_files) }}"
+    default_filter_files:
+      - "conf/filter/00-record_transformer.conf.j2"
+      - "conf/filter/01-rewrite.conf.j2"
+      - "conf/filter/02-parser.conf.j2"
+    customised_filter_files: "{{ find_custom_fluentd_filters.files | map(attribute='path') | list }}"
+    # Formats
+    fluentd_format_files: "{{ default_format_files | customise_fluentd(customised_format_files) }}"
+    default_format_files:
+      - "conf/format/apache_access.conf.j2"
+      - "conf/format/wsgi_access.conf.j2"
+    customised_format_files: "{{ find_custom_fluentd_formats.files | map(attribute='path') | list }}"
+    # Outputs
+    fluentd_output_files: "{{ default_output_files_enabled | customise_fluentd(customised_output_files) }}"
+    default_output_files_enabled: "{{ default_output_files | selectattr('enabled') | map(attribute='name') | list }}"
+    default_output_files:
+      - name: "conf/output/00-local.conf.j2"
+        enabled: true
+      - name: "conf/output/01-es.conf.j2"
+        enabled: "{{ log_direct_to_elasticsearch }}"
+      - name: "conf/output/03-opensearch.conf.j2"
+        enabled: "{{ log_direct_to_opensearch }}"
+    customised_output_files: "{{ find_custom_fluentd_outputs.files | map(attribute='path') | list }}"
+  template:
+    src: "td-agent.conf.j2"
+    dest: "{{ node_config_directory }}/fluentd/td-agent.conf"
+    mode: "0660"
+  become: true
+  when:
+    - common_services.fluentd | service_enabled_and_mapped_to_host
+  notify:
+    - Restart fluentd container
+
+- name: Copying over cron logrotate config file
+  vars:
+    cron_logrotate_enabled_services: >-
+      {{ cron_logrotate_services |
+         selectattr('enabled') |
+         map(attribute='name') |
+         list }}
+    cron_logrotate_services:
+      - { name: "ansible", enabled: "yes" }
+      - { name: "aodh", enabled: "{{ enable_aodh | bool }}" }
+      - { name: "barbican", enabled: "{{ enable_barbican | bool }}" }
+      - { name: "blazar", enabled: "{{ enable_blazar | bool }}" }
+      - { name: "ceilometer", enabled: "{{ enable_ceilometer | bool }}" }
+      - { name: "cinder", enabled: "{{ enable_cinder | bool }}" }
+      - { name: "cloudkitty", enabled: "{{ enable_cloudkitty | bool }}" }
+      - { name: "collectd", enabled: "{{ enable_collectd | bool }}" }
+      - { name: "cyborg", enabled: "{{ enable_cyborg | bool }}" }
+      - { name: "designate", enabled: "{{ enable_designate | bool }}" }
+      - { name: "etcd", enabled: "{{ enable_etcd | bool }}" }
+      - { name: "fluentd", enabled: "{{ enable_fluentd | bool }}" }
+      - { name: "freezer", enabled: "{{ enable_freezer | bool }}" }
+      - { name: "glance", enabled: "{{ enable_glance | bool }}" }
+      - { name: "glance-tls-proxy", enabled: "{{ glance_enable_tls_backend | bool }}" }
+      - { name: "gnocchi", enabled: "{{ enable_gnocchi | bool }}" }
+      - { name: "grafana", enabled: "{{ enable_grafana | bool }}" }
+      - { name: "hacluster", enabled: "{{ enable_hacluster | bool }}" }
+      - { name: "haproxy", enabled: "{{ enable_haproxy | bool }}" }
+      - { name: "heat", enabled: "{{ enable_heat | bool }}" }
+      - { name: "horizon", enabled: "{{ enable_horizon | bool }}" }
+      - { name: "influxdb", enabled: "{{ enable_influxdb | bool }}" }
+      - { name: "ironic", enabled: "{{ enable_ironic | bool }}" }
+      - { name: "ironic-inspector", enabled: "{{ enable_ironic | bool }}" }
+      - { name: "keystone", enabled: "{{ enable_keystone | bool }}" }
+      - { name: "kuryr", enabled: "{{ enable_kuryr | bool }}" }
+      - { name: "magnum", enabled: "{{ enable_magnum | bool }}" }
+      - { name: "manila", enabled: "{{ enable_manila | bool }}" }
+      - { name: "mariadb", enabled: "{{ enable_mariadb | bool }}" }
+      - { name: "masakari", enabled: "{{ enable_masakari | bool }}" }
+      - { name: "mistral", enabled: "{{ enable_mistral | bool }}" }
+      - { name: "murano", enabled: "{{ enable_murano | bool }}" }
+      - { name: "neutron", enabled: "{{ enable_neutron | bool }}" }
+      - { name: "neutron-tls-proxy", enabled: "{{ neutron_enable_tls_backend | bool }}" }
+      - { name: "nova", enabled: "{{ enable_nova | bool }}" }
+      - { name: "nova-libvirt", enabled: "{{ enable_nova | bool and enable_nova_libvirt_container | bool }}" }
+      - { name: "octavia", enabled: "{{ enable_octavia | bool }}" }
+      - { name: "opensearch", enabled: "{{ enable_opensearch | bool or enable_opensearch_dashboards | bool }}" }
+      - { name: "openvswitch", enabled: "{{ enable_openvswitch | bool }}" }
+      - { name: "outward-rabbitmq", enabled: "{{ enable_outward_rabbitmq | bool }}" }
+      - { name: "placement", enabled: "{{ enable_placement | bool }}" }
+      - { name: "prometheus", enabled: "{{ enable_prometheus | bool }}" }
+      - { name: "proxysql", enabled: "{{ enable_proxysql | bool }}" }
+      - { name: "rabbitmq", enabled: "{{ enable_rabbitmq | bool }}" }
+      - { name: "sahara", enabled: "{{ enable_sahara | bool }}" }
+      - { name: "senlin", enabled: "{{ enable_senlin | bool }}" }
+      - { name: "skydive", enabled: "{{ enable_skydive | bool }}" }
+      - { name: "solum", enabled: "{{ enable_solum | bool }}" }
+      - { name: "swift", enabled: "{{ enable_swift | bool }}" }
+      - { name: "tacker", enabled: "{{ enable_tacker | bool }}" }
+      - { name: "trove", enabled: "{{ enable_trove | bool }}" }
+      - { name: "venus", enabled: "{{ enable_venus | bool }}" }
+      - { name: "vitrage", enabled: "{{ enable_vitrage | bool }}" }
+      - { name: "watcher", enabled: "{{ enable_watcher | bool }}" }
+      - { name: "zun", enabled: "{{ enable_zun | bool }}" }
+  template:
+    src: "cron-logrotate-global.conf.j2"
+    dest: "{{ node_config_directory }}/cron/logrotate.conf"
+    mode: "0660"
+  become: true
+  when:
+    - common_services.cron | service_enabled_and_mapped_to_host
+  notify:
+    - Restart cron container
+
+- name: Ensure RabbitMQ Erlang cookie exists
+  become: true
+  template:
+    src: "rabbitmq-erlang.cookie.j2"
+    dest: "{{ node_config_directory }}/kolla-toolbox/rabbitmq-erlang.cookie"
+    mode: "0660"
+  when:
+    - common_services['kolla-toolbox'] | service_enabled_and_mapped_to_host
+    - enable_rabbitmq | bool
+  notify:
+    - Restart kolla-toolbox container
+
+- name: Ensuring config directories have correct owner and permission
+  become: true
+  file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  ignore_errors: "{{ ansible_check_mode }}"
+  when:
+    - item.value | service_enabled_and_mapped_to_host
+    - item.key != "kolla-toolbox"
+  with_dict: "{{ common_services }}"
+
+- name: Copy rabbitmq-env.conf to kolla toolbox
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/kolla-toolbox/rabbitmq-env.conf"
+    mode: "0600"
+  with_first_found:
+    - "{{ node_custom_config }}/kolla-toolbox/{{ inventory_hostname }}/rabbitmq-env.conf"
+    - "{{ node_custom_config }}/kolla-toolbox/rabbitmq-env.conf"
+    - "rabbitmq-env.conf.j2"
+  become: true
+  when:
+    - common_services['kolla-toolbox'] | service_enabled_and_mapped_to_host
+    - enable_rabbitmq | bool
+
+- name: Copy rabbitmq erl_inetrc to kolla toolbox
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/kolla-toolbox/erl_inetrc"
+    mode: "0600"
+  become: true
+  with_first_found:
+    - "{{ node_custom_config }}/kolla-toolbox/{{ inventory_hostname }}/erl_inetrc"
+    - "{{ node_custom_config }}/kolla-toolbox/erl_inetrc"
+    - "erl_inetrc.j2"
+  when:
+    - common_services['kolla-toolbox'] | service_enabled_and_mapped_to_host
+    - enable_rabbitmq | bool

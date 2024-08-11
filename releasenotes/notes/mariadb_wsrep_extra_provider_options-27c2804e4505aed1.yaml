@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    Introduces a new configuration variable
+    ``mariadb_wsrep_extra_provider_options`` allowing users to set additional
+    WSREP options.

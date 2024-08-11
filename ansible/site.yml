@@ -1,0 +1,1011 @@
+---
+- import_playbook: gather-facts.yml
+
+# NOTE(mgoddard): In large environments, even tasks that are skipped can take a
+# significant amount of time. This is an optimisation to prevent any tasks
+# running in the subsequent plays for services that are disabled.
+- name: Group hosts based on configuration
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Group hosts based on Kolla action
+      group_by:
+        key: "kolla_action_{{ kolla_action }}"
+      changed_when: false
+
+    - name: Group hosts based on enabled services
+      group_by:
+        key: "{{ item }}"
+      changed_when: false
+      with_items:
+        - enable_aodh_{{ enable_aodh | bool }}
+        - enable_barbican_{{ enable_barbican | bool }}
+        - enable_blazar_{{ enable_blazar | bool }}
+        - enable_ceilometer_{{ enable_ceilometer | bool }}
+        - enable_ceph_rgw_{{ enable_ceph_rgw | bool }}
+        - enable_cinder_{{ enable_cinder | bool }}
+        - enable_cloudkitty_{{ enable_cloudkitty | bool }}
+        - enable_collectd_{{ enable_collectd | bool }}
+        - enable_cyborg_{{ enable_cyborg | bool }}
+        - enable_designate_{{ enable_designate | bool }}
+        - enable_etcd_{{ enable_etcd | bool }}
+        - enable_freezer_{{ enable_freezer | bool }}
+        - enable_glance_{{ enable_glance | bool }}
+        - enable_gnocchi_{{ enable_gnocchi | bool }}
+        - enable_grafana_{{ enable_grafana | bool }}
+        - enable_hacluster_{{ enable_hacluster | bool }}
+        - enable_heat_{{ enable_heat | bool }}
+        - enable_horizon_{{ enable_horizon | bool }}
+        - enable_influxdb_{{ enable_influxdb | bool }}
+        - enable_ironic_{{ enable_ironic | bool }}
+        - enable_iscsid_{{ enable_iscsid | bool }}
+        - enable_keystone_{{ enable_keystone | bool }}
+        - enable_kuryr_{{ enable_kuryr | bool }}
+        - enable_loadbalancer_{{ enable_loadbalancer | bool }}
+        - enable_magnum_{{ enable_magnum | bool }}
+        - enable_manila_{{ enable_manila | bool }}
+        - enable_mariadb_{{ enable_mariadb | bool }}
+        - enable_masakari_{{ enable_masakari | bool }}
+        - enable_memcached_{{ enable_memcached | bool }}
+        - enable_mistral_{{ enable_mistral | bool }}
+        - enable_multipathd_{{ enable_multipathd | bool }}
+        - enable_murano_{{ enable_murano | bool }}
+        - enable_neutron_{{ enable_neutron | bool }}
+        - enable_nova_{{ enable_nova | bool }}
+        - enable_octavia_{{ enable_octavia | bool }}
+        - enable_opensearch_{{ enable_opensearch | bool }}
+        - enable_opensearch_dashboards_{{ enable_opensearch_dashboards | bool }}
+        - enable_openvswitch_{{ enable_openvswitch | bool }}_enable_ovs_dpdk_{{ enable_ovs_dpdk | bool }}
+        - enable_outward_rabbitmq_{{ enable_outward_rabbitmq | bool }}
+        - enable_ovn_{{ enable_ovn | bool }}
+        - enable_placement_{{ enable_placement | bool }}
+        - enable_prometheus_{{ enable_prometheus | bool }}
+        - enable_rabbitmq_{{ enable_rabbitmq | bool }}
+        - enable_redis_{{ enable_redis | bool }}
+        - enable_sahara_{{ enable_sahara | bool }}
+        - enable_senlin_{{ enable_senlin | bool }}
+        - enable_skydive_{{ enable_skydive | bool }}
+        - enable_solum_{{ enable_solum | bool }}
+        - enable_swift_{{ enable_swift | bool }}
+        - enable_tacker_{{ enable_tacker | bool }}
+        - enable_telegraf_{{ enable_telegraf | bool }}
+        - enable_trove_{{ enable_trove | bool }}
+        - enable_venus_{{ enable_venus | bool }}
+        - enable_vitrage_{{ enable_vitrage | bool }}
+        - enable_watcher_{{ enable_watcher | bool }}
+        - enable_zun_{{ enable_zun | bool }}
+  tags: always
+
+- name: Apply role prechecks
+  gather_facts: false
+  # Apply only when kolla action is 'precheck'.
+  hosts: kolla_action_precheck
+  roles:
+    - role: prechecks
+
+- name: Apply role common
+  gather_facts: false
+  hosts:
+    - cron
+    - fluentd
+    - kolla-logs
+    - kolla-toolbox
+  serial: '{{ kolla_serial|default("0") }}'
+  tags:
+    - common
+  roles:
+    - role: common
+
+- name: Apply role loadbalancer
+  gather_facts: false
+  hosts:
+    - loadbalancer
+    - '&enable_loadbalancer_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  tags:
+    - haproxy
+    - keepalived
+    - loadbalancer
+  roles:
+    - { role: loadbalancer }
+  tasks:
+    - block:
+        - include_role:
+            name: aodh
+            tasks_from: loadbalancer
+          tags: aodh
+          when: enable_aodh | bool
+        - include_role:
+            name: barbican
+            tasks_from: loadbalancer
+          tags: barbican
+          when: enable_barbican | bool
+        - include_role:
+            name: blazar
+            tasks_from: loadbalancer
+          tags: blazar
+          when: enable_blazar | bool
+        - include_role:
+            name: ceph-rgw
+            tasks_from: loadbalancer
+          tags: ceph-rgw
+          when: enable_ceph_rgw | bool
+        - include_role:
+            name: cinder
+            tasks_from: loadbalancer
+          tags: cinder
+          when: enable_cinder | bool
+        - include_role:
+            name: cloudkitty
+            tasks_from: loadbalancer
+          tags: cloudkitty
+          when: enable_cloudkitty | bool
+        - include_role:
+            name: cyborg
+            tasks_from: loadbalancer
+          tags: cyborg
+          when: enable_cyborg | bool
+        - include_role:
+            name: designate
+            tasks_from: loadbalancer
+          tags: designate
+          when: enable_designate | bool
+        - include_role:
+            name: etcd
+            tasks_from: loadbalancer
+          tags: etcd
+          when: enable_etcd | bool
+        - include_role:
+            name: freezer
+            tasks_from: loadbalancer
+          tags: freezer
+          when: enable_freezer | bool
+        - include_role:
+            name: glance
+            tasks_from: loadbalancer
+          tags: glance
+          when: enable_glance | bool
+        - include_role:
+            name: gnocchi
+            tasks_from: loadbalancer
+          tags: gnocchi
+          when: enable_gnocchi | bool
+        - include_role:
+            name: grafana
+            tasks_from: loadbalancer
+          tags: grafana
+          when: enable_grafana | bool
+        - include_role:
+            name: heat
+            tasks_from: loadbalancer
+          tags: heat
+          when: enable_heat | bool
+        - include_role:
+            name: horizon
+            tasks_from: loadbalancer
+          tags: horizon
+          when: enable_horizon | bool
+        - include_role:
+            name: influxdb
+            tasks_from: loadbalancer
+          tags: influxdb
+          when: enable_influxdb | bool
+        - include_role:
+            name: ironic
+            tasks_from: loadbalancer
+          tags: ironic
+          when: enable_ironic | bool
+        - include_role:
+            name: keystone
+            tasks_from: loadbalancer
+          tags: keystone
+          when: enable_keystone | bool
+        - include_role:
+            name: magnum
+            tasks_from: loadbalancer
+          tags: magnum
+          when: enable_magnum | bool
+        - include_role:
+            name: manila
+            tasks_from: loadbalancer
+          tags: manila
+          when: enable_manila | bool
+        - include_role:
+            name: mariadb
+            tasks_from: loadbalancer
+          tags: mariadb
+          when: enable_mariadb | bool or enable_external_mariadb_load_balancer | bool
+        - include_role:
+            name: masakari
+            tasks_from: loadbalancer
+          tags: masakari
+          when: enable_masakari | bool
+        - include_role:
+            name: memcached
+            tasks_from: loadbalancer
+          tags: memcached
+          when: enable_memcached | bool
+        - include_role:
+            name: mistral
+            tasks_from: loadbalancer
+          tags: mistral
+          when: enable_mistral | bool
+        - include_role:
+            name: murano
+            tasks_from: loadbalancer
+          tags: murano
+          when: enable_murano | bool
+        - include_role:
+            name: neutron
+            tasks_from: loadbalancer
+          tags: neutron
+          when: enable_neutron | bool
+        - include_role:
+            name: placement
+            tasks_from: loadbalancer
+          tags: placement
+        - include_role:
+            name: nova
+            tasks_from: loadbalancer
+          tags:
+            - nova
+            - nova-api
+          when: enable_nova | bool
+        - include_role:
+            name: nova-cell
+            tasks_from: loadbalancer
+          tags:
+            - nova
+            - nova-cell
+          when: enable_nova | bool
+        - include_role:
+            name: octavia
+            tasks_from: loadbalancer
+          tags: octavia
+          when: enable_octavia | bool
+        - include_role:
+            name: opensearch
+            tasks_from: loadbalancer
+          tags: opensearch
+          when: enable_opensearch | bool
+        - include_role:
+            name: prometheus
+            tasks_from: loadbalancer
+          tags: prometheus
+          when: enable_prometheus | bool
+        - include_role:
+            name: rabbitmq
+            tasks_from: loadbalancer
+          tags: rabbitmq
+          vars:
+            role_rabbitmq_cluster_cookie:
+            role_rabbitmq_groups:
+          when: enable_rabbitmq | bool or enable_outward_rabbitmq | bool
+        - include_role:
+            name: sahara
+            tasks_from: loadbalancer
+          tags: sahara
+          when: enable_sahara | bool
+        - include_role:
+            name: senlin
+            tasks_from: loadbalancer
+          tags: senlin
+          when: enable_senlin | bool
+        - include_role:
+            name: skydive
+            tasks_from: loadbalancer
+          tags: skydive
+          when: enable_skydive | bool
+        - include_role:
+            name: solum
+            tasks_from: loadbalancer
+          tags: solum
+          when: enable_solum | bool
+        - include_role:
+            name: swift
+            tasks_from: loadbalancer
+          tags: swift
+          when: enable_swift | bool
+        - include_role:
+            name: tacker
+            tasks_from: loadbalancer
+          tags: tacker
+          when: enable_tacker | bool
+        - include_role:
+            name: trove
+            tasks_from: loadbalancer
+          tags: trove
+          when: enable_trove | bool
+        - include_role:
+            name: venus
+            tasks_from: loadbalancer
+          tags: venus
+          when: enable_venus | bool
+        - include_role:
+            name: vitrage
+            tasks_from: loadbalancer
+          tags: vitrage
+          when: enable_vitrage | bool
+        - include_role:
+            name: watcher
+            tasks_from: loadbalancer
+          tags: watcher
+          when: enable_watcher | bool
+        - include_role:
+            name: zun
+            tasks_from: loadbalancer
+          tags: zun
+          when: enable_zun | bool
+      when:
+        - enable_haproxy | bool
+        - kolla_action in ['deploy', 'reconfigure', 'upgrade', 'config']
+
+- name: Apply role collectd
+  gather_facts: false
+  hosts:
+    - collectd
+    - '&enable_collectd_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: collectd,
+        tags: collectd }
+
+- name: Apply role influxdb
+  gather_facts: false
+  hosts:
+    - influxdb
+    - '&enable_influxdb_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: influxdb,
+        tags: influxdb }
+
+- name: Apply role telegraf
+  gather_facts: false
+  hosts:
+    - telegraf
+    - '&enable_telegraf_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: telegraf,
+        tags: telegraf }
+
+- name: Apply role redis
+  gather_facts: false
+  hosts:
+    - redis
+    - '&enable_redis_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: redis,
+        tags: redis }
+
+- name: Apply role mariadb
+  gather_facts: false
+  hosts:
+    - mariadb
+    - '&enable_mariadb_True'
+  roles:
+    - { role: mariadb,
+        tags: mariadb }
+
+- name: Apply role memcached
+  gather_facts: false
+  hosts:
+    - memcached
+    - '&enable_memcached_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: memcached,
+        tags: [memcache, memcached] }
+
+- name: Apply role prometheus
+  gather_facts: false
+  hosts:
+    - prometheus
+    - prometheus-node-exporter
+    - prometheus-mysqld-exporter
+    - prometheus-haproxy-exporter
+    - prometheus-memcached-exporter
+    - prometheus-cadvisor
+    - prometheus-alertmanager
+    - prometheus-openstack-exporter
+    - prometheus-elasticsearch-exporter
+    - prometheus-blackbox-exporter
+    - prometheus-libvirt-exporter
+    - '&enable_prometheus_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: prometheus,
+        tags: prometheus }
+
+- name: Apply role iscsi
+  gather_facts: false
+  hosts:
+    - iscsid
+    - tgtd
+    - '&enable_iscsid_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: iscsi,
+        tags: iscsi }
+
+- name: Apply role multipathd
+  gather_facts: false
+  hosts:
+    - multipathd
+    - '&enable_multipathd_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: multipathd,
+        tags: multipathd }
+
+- name: Apply role rabbitmq
+  gather_facts: false
+  hosts:
+    - rabbitmq
+    - '&enable_rabbitmq_True'
+  roles:
+    - { role: rabbitmq,
+        tags: rabbitmq,
+        role_rabbitmq_cluster_cookie: '{{ rabbitmq_cluster_cookie }}',
+        role_rabbitmq_cluster_port: '{{ rabbitmq_cluster_port }}',
+        role_rabbitmq_epmd_port: '{{ rabbitmq_epmd_port }}',
+        role_rabbitmq_groups: rabbitmq,
+        role_rabbitmq_management_port: '{{ rabbitmq_management_port }}',
+        role_rabbitmq_monitoring_password: '{{ rabbitmq_monitoring_password }}',
+        role_rabbitmq_monitoring_user: '{{ rabbitmq_monitoring_user }}',
+        role_rabbitmq_password: '{{ rabbitmq_password }}',
+        role_rabbitmq_port: '{{ rabbitmq_port }}',
+        role_rabbitmq_prometheus_port: '{{ rabbitmq_prometheus_port }}',
+        role_rabbitmq_user: '{{ rabbitmq_user }}' }
+
+- name: Apply role rabbitmq (outward)
+  gather_facts: false
+  hosts:
+    - outward-rabbitmq
+    - '&enable_outward_rabbitmq_True'
+  roles:
+    - { role: rabbitmq,
+        tags: rabbitmq,
+        project_name: outward_rabbitmq,
+        role_rabbitmq_cluster_cookie: '{{ outward_rabbitmq_cluster_cookie }}',
+        role_rabbitmq_cluster_port: '{{ outward_rabbitmq_cluster_port }}',
+        role_rabbitmq_epmd_port: '{{ outward_rabbitmq_epmd_port }}',
+        role_rabbitmq_groups: outward-rabbitmq,
+        role_rabbitmq_management_port: '{{ outward_rabbitmq_management_port }}',
+        role_rabbitmq_password: '{{ outward_rabbitmq_password }}',
+        role_rabbitmq_port: '{{ outward_rabbitmq_port }}',
+        role_rabbitmq_prometheus_port: '{{ outward_rabbitmq_prometheus_port }}',
+        role_rabbitmq_user: '{{ outward_rabbitmq_user }}' }
+
+- name: Apply role etcd
+  gather_facts: false
+  hosts:
+    - etcd
+    - '&enable_etcd_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: etcd,
+        tags: etcd }
+
+- name: Apply role keystone
+  gather_facts: false
+  hosts:
+    - keystone
+    - '&enable_keystone_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: keystone,
+        tags: keystone }
+
+- name: Apply role opensearch
+  gather_facts: false
+  hosts:
+    - opensearch
+    - '&enable_opensearch_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: opensearch,
+        tags: opensearch }
+
+- name: Apply role swift
+  gather_facts: false
+  hosts:
+    - swift-account-server
+    - swift-container-server
+    - swift-object-server
+    - swift-proxy-server
+    - '&enable_swift_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: swift,
+        tags: swift }
+
+- name: Apply role ceph-rgw
+  gather_facts: false
+  hosts:
+    # NOTE(mgoddard): This is only used to register Keystone services, and
+    # can run on any host running kolla-toolbox.
+    - kolla-toolbox
+    - '&enable_ceph_rgw_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ceph-rgw,
+        tags: ceph-rgw }
+
+- name: Apply role glance
+  gather_facts: false
+  hosts:
+    - glance-api
+    - '&enable_glance_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: glance,
+        tags: glance }
+
+- name: Apply role ironic
+  gather_facts: false
+  hosts:
+    - ironic-api
+    - ironic-conductor
+    - ironic-inspector
+    - ironic-tftp
+    - ironic-http
+    - '&enable_ironic_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ironic,
+        tags: ironic }
+
+- name: Apply role cinder
+  gather_facts: false
+  hosts:
+    - cinder-api
+    - cinder-backup
+    - cinder-scheduler
+    - cinder-volume
+    - '&enable_cinder_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: cinder,
+        tags: cinder }
+
+- name: Apply role placement
+  gather_facts: false
+  hosts:
+    - placement-api
+    - '&enable_placement_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: placement,
+        tags: placement }
+
+# Nova deployment is more complicated than other services, so is covered in its
+# own playbook.
+- import_playbook: nova.yml
+
+- name: Apply role openvswitch
+  gather_facts: false
+  hosts:
+    - openvswitch
+    - '&enable_openvswitch_True_enable_ovs_dpdk_False'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: openvswitch,
+        tags: openvswitch,
+        when: "(enable_openvswitch | bool) and not (enable_ovs_dpdk | bool)"}
+
+- name: Apply role ovs-dpdk
+  gather_facts: false
+  hosts:
+    - openvswitch
+    - '&enable_openvswitch_True_enable_ovs_dpdk_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ovs-dpdk,
+        tags: ovs-dpdk,
+        when: "(enable_openvswitch | bool) and (enable_ovs_dpdk | bool)"}
+
+- name: Apply role ovn-controller
+  gather_facts: false
+  hosts:
+    - ovn-controller
+    - '&enable_ovn_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ovn-controller,
+        tags: [ovn, ovn-controller] }
+
+- name: Apply role ovn-db
+  gather_facts: false
+  hosts:
+    - ovn-nb-db
+    - ovn-northd
+    - ovn-sb-db
+    - '&enable_ovn_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ovn-db,
+        tags: [ovn, ovn-db] }
+
+- name: Apply role neutron
+  gather_facts: false
+  hosts:
+    - neutron-server
+    - neutron-dhcp-agent
+    - neutron-l3-agent
+    - ironic-neutron-agent
+    - neutron-metadata-agent
+    - neutron-ovn-metadata-agent
+    - neutron-metering-agent
+    - neutron-bgp-dragent
+    - neutron-infoblox-ipam-agent
+    - compute
+    - manila-share
+    - '&enable_neutron_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: neutron,
+        tags: neutron }
+
+- name: Apply role kuryr
+  gather_facts: false
+  hosts:
+    - compute
+    - '&enable_kuryr_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: kuryr,
+        tags: kuryr }
+
+- name: Apply role hacluster
+  gather_facts: false
+  hosts:
+    - hacluster
+    - hacluster-remote
+    - '&enable_hacluster_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: hacluster,
+        tags: hacluster }
+
+- name: Apply role heat
+  gather_facts: false
+  hosts:
+    - heat-api
+    - heat-api-cfn
+    - heat-engine
+    - '&enable_heat_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: heat,
+        tags: heat }
+
+- name: Apply role horizon
+  gather_facts: false
+  hosts:
+    - horizon
+    - '&enable_horizon_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: horizon,
+        tags: horizon }
+
+- name: Apply role murano
+  gather_facts: false
+  hosts:
+    - murano-api
+    - murano-engine
+    - '&enable_murano_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: murano,
+        tags: murano }
+
+- name: Apply role solum
+  gather_facts: false
+  hosts:
+    - solum-api
+    - solum-worker
+    - solum-deployer
+    - solum-conductor
+    - solum-application-deployment
+    - solum-image-builder
+    - '&enable_solum_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: solum,
+        tags: solum }
+
+- name: Apply role magnum
+  gather_facts: false
+  hosts:
+    - magnum-api
+    - magnum-conductor
+    - '&enable_magnum_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: magnum,
+        tags: magnum }
+
+- name: Apply role mistral
+  gather_facts: false
+  hosts:
+    - mistral-api
+    - mistral-engine
+    - mistral-executor
+    - mistral-event-engine
+    - '&enable_mistral_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: mistral,
+        tags: mistral }
+
+- name: Apply role sahara
+  gather_facts: false
+  hosts:
+    - sahara-api
+    - sahara-engine
+    - '&enable_sahara_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: sahara,
+        tags: sahara }
+
+- name: Apply role manila
+  gather_facts: false
+  hosts:
+    - manila-api
+    - manila-data
+    - manila-share
+    - manila-scheduler
+    - '&enable_manila_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: manila,
+        tags: manila }
+
+- name: Apply role gnocchi
+  gather_facts: false
+  hosts:
+    - gnocchi-api
+    - gnocchi-metricd
+    - gnocchi-statsd
+    - '&enable_gnocchi_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: gnocchi,
+        tags: gnocchi }
+
+- name: Apply role ceilometer
+  gather_facts: false
+  hosts:
+    - ceilometer-central
+    - ceilometer-notification
+    - ceilometer-compute
+    - ceilometer-ipmi
+    - '&enable_ceilometer_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: ceilometer,
+        tags: ceilometer }
+
+- name: Apply role aodh
+  gather_facts: false
+  hosts:
+    - aodh-api
+    - aodh-evaluator
+    - aodh-listener
+    - aodh-notifier
+    - '&enable_aodh_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: aodh,
+        tags: aodh }
+
+- name: Apply role barbican
+  gather_facts: false
+  hosts:
+    - barbican-api
+    - barbican-keystone-listener
+    - barbican-worker
+    - '&enable_barbican_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: barbican,
+        tags: barbican }
+
+- name: Apply role cyborg
+  gather_facts: false
+  hosts:
+    - cyborg-api
+    - cyborg-agent
+    - cyborg-conductor
+    - '&enable_cyborg_True'
+  serial: '{{ serial|default("0") }}'
+  roles:
+    - { role: cyborg,
+        tags: cyborg }
+
+- name: Apply role designate
+  gather_facts: false
+  hosts:
+    - designate-api
+    - designate-central
+    - designate-producer
+    - designate-mdns
+    - designate-worker
+    - designate-sink
+    - designate-backend-bind9
+    - '&enable_designate_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: designate,
+        tags: designate }
+
+- name: Apply role trove
+  gather_facts: false
+  hosts:
+    - trove-api
+    - trove-conductor
+    - trove-taskmanager
+    - '&enable_trove_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: trove,
+        tags: trove }
+
+- name: Apply role watcher
+  gather_facts: false
+  hosts:
+    - watcher-api
+    - watcher-engine
+    - watcher-applier
+    - '&enable_watcher_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: watcher,
+        tags: watcher }
+
+- name: Apply role grafana
+  gather_facts: false
+  hosts:
+    - grafana
+    - '&enable_grafana_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: grafana,
+        tags: grafana }
+
+- name: Apply role cloudkitty
+  gather_facts: false
+  hosts:
+    - cloudkitty-api
+    - cloudkitty-processor
+    - '&enable_cloudkitty_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: cloudkitty,
+        tags: cloudkitty }
+
+- name: Apply role freezer
+  gather_facts: false
+  hosts:
+    - freezer-api
+    - freezer-scheduler
+    - '&enable_freezer_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: freezer,
+        tags: freezer }
+
+- name: Apply role senlin
+  gather_facts: false
+  hosts:
+    - senlin-api
+    - senlin-conductor
+    - senlin-engine
+    - senlin-health-manager
+    - '&enable_senlin_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: senlin,
+        tags: senlin }
+
+- name: Apply role tacker
+  gather_facts: false
+  hosts:
+    - tacker-server
+    - tacker-conductor
+    - '&enable_tacker_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: tacker,
+        tags: tacker }
+
+- name: Apply role octavia
+  gather_facts: false
+  hosts:
+    - octavia-api
+    - octavia-health-manager
+    - octavia-housekeeping
+    - octavia-worker
+    - '&enable_octavia_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: octavia,
+        tags: octavia }
+
+- name: Apply role zun
+  gather_facts: false
+  hosts:
+    - zun-api
+    - zun-wsproxy
+    - zun-compute
+    - zun-cni-daemon
+    - '&enable_zun_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: zun,
+        tags: zun }
+
+- name: Apply role skydive
+  gather_facts: false
+  hosts:
+    - skydive-agent
+    - skydive-analyzer
+    - '&enable_skydive_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: skydive,
+        tags: skydive }
+
+- name: Apply role vitrage
+  gather_facts: false
+  hosts:
+    - vitrage-api
+    - vitrage-graph
+    - vitrage-notifier
+    - vitrage-ml
+    - vitrage-persistor
+    - '&enable_vitrage_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: vitrage,
+        tags: vitrage }
+
+- name: Apply role blazar
+  gather_facts: false
+  hosts:
+    - blazar-api
+    - blazar-manager
+    - '&enable_blazar_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: blazar,
+        tags: blazar }
+
+- name: Apply role masakari
+  gather_facts: false
+  hosts:
+    - masakari-api
+    - masakari-engine
+    - masakari-hostmonitor
+    - masakari-instancemonitor
+    - '&enable_masakari_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: masakari,
+        tags: masakari }
+
+- name: Apply role venus
+  gather_facts: false
+  hosts:
+    - venus-api
+    - venus-manager
+    - '&enable_venus_True'
+  serial: '{{ kolla_serial|default("0") }}'
+  roles:
+    - { role: venus,
+        tags: venus }

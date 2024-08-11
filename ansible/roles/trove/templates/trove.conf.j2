@@ -1,0 +1,95 @@
+[DEFAULT]
+debug = {{ trove_logging_debug }}
+
+log_dir = /var/log/kolla/trove
+
+host = {{ api_interface_address }}
+
+bind_port = {{ trove_api_port }}
+bind_host = {{ api_interface_address }}
+trove_api_workers = {{ trove_api_workers }}
+auth_strategy = keystone
+
+transport_url = {{ rpc_transport_url }}
+
+{% if enable_trove_singletenant | bool %}
+nova_proxy_admin_pass = {{ trove_keystone_password }}
+nova_proxy_admin_tenant_name = service
+nova_proxy_admin_user = trove
+remote_nova_client = trove.common.single_tenant_remote.nova_client_trove_admin
+remote_cinder_client = trove.common.single_tenant_remote.cinder_client_trove_admin
+remote_neutron_client = trove.common.single_tenant_remote.neutron_client_trove_admin
+{% endif %}
+
+nova_compute_endpoint_type = internalURL
+neutron_endpoint_type = internalURL
+cinder_endpoint_type = internalURL
+swift_endpoint_type = internalURL
+glance_endpoint_type = internalURL
+trove_endpoint_type = internalURL
+
+taskmanager_manager = trove.taskmanager.manager.Manager
+conductor_manager = trove.conductor.manager.Manager
+network_driver = trove.network.neutron.NeutronDriver
+
+control_exchange = trove
+
+[service_credentials]
+auth_url = {{ keystone_internal_url }}
+region_name = {{ openstack_region_name }}
+project_name = service
+password = {{ trove_keystone_password }}
+project_domain_name = {{ default_project_domain_name }}
+user_domain_name = {{ default_user_domain_name }}
+username = {{ trove_keystone_user }}
+
+[database]
+connection = mysql+pymysql://{{ trove_database_user }}:{{ trove_database_password }}@{{ trove_database_address }}/{{ trove_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+max_retries = -1
+
+[keystone_authtoken]
+service_type = database
+www_authenticate_uri = {{ keystone_internal_url }}
+project_domain_name = {{ default_project_domain_name }}
+project_name = service
+user_domain_name = {{ default_user_domain_name }}
+username = {{ trove_keystone_user }}
+password = {{ trove_keystone_password }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+{% if trove_enabled_notification_topics %}
+driver = messagingv2
+topics = {{ trove_enabled_notification_topics | map(attribute='name') | join(',') }}
+{% else %}
+driver = noop
+{% endif %}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+{% if enable_osprofiler | bool %}
+[profiler]
+enabled = true
+trace_sqlalchemy = true
+hmac_keys = {{ osprofiler_secret }}
+connection_string = {{ osprofiler_backend_connection_string }}
+{% endif %}
+
+{% if trove_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ trove_policy_file }}
+{% endif %}

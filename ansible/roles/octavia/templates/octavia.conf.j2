@@ -1,0 +1,153 @@
+[DEFAULT]
+debug = {{ octavia_logging_debug }}
+
+log_dir = /var/log/kolla/octavia
+{% if service_name == "octavia-api" %}
+log_file = octavia-api.log
+{% endif %}
+
+transport_url = {{ rpc_transport_url }}
+
+[api_settings]
+bind_host = {{ api_interface_address }}
+bind_port = {{ octavia_api_listen_port }}
+enabled_provider_drivers = '{{ octavia_provider_drivers }}'
+
+[certificates]
+ca_private_key_passphrase = {{ octavia_ca_password }}
+ca_private_key = /etc/octavia/certs/server_ca.key.pem
+ca_certificate = /etc/octavia/certs/server_ca.cert.pem
+{% if enable_barbican | bool %}
+region_name = {{ openstack_region_name }}
+endpoint_type = internal
+ca_certificates_file = {{ openstack_cacert }}
+{% endif %}
+
+[driver_agent]
+enabled_provider_agents = {{ octavia_provider_agents }}
+
+{% if neutron_plugin_agent == 'ovn' %}
+[ovn]
+ovn_nb_connection = {{ ovn_nb_connection }}
+ovn_sb_connection = {{ ovn_sb_connection }}
+{% endif %}
+
+[haproxy_amphora]
+server_ca = /etc/octavia/certs/server_ca.cert.pem
+client_cert = /etc/octavia/certs/client.cert-and-key.pem
+bind_port = {{ octavia_amp_listen_port }}
+
+[database]
+connection = mysql+pymysql://{{ octavia_database_user }}:{{ octavia_database_password }}@{{ octavia_database_address }}/{{ octavia_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+max_retries = -1
+
+[service_auth]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+username = {{ octavia_keystone_user }}
+password = {{ octavia_keystone_password }}
+user_domain_name = {{ default_user_domain_name }}
+project_name = {{ octavia_service_auth_project }}
+project_domain_name = {{ default_project_domain_name }}
+cafile = {{ openstack_cacert }}
+
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+[keystone_authtoken]
+service_type = load-balancer
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+project_name = service
+username = {{ octavia_keystone_user }}
+password = {{ octavia_keystone_password }}
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
+
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+[health_manager]
+bind_port = {{ octavia_health_manager_port }}
+bind_ip = {{ octavia_network_interface_address }}
+heartbeat_key = insecure
+controller_ip_port_list = {% for host in groups['octavia-health-manager'] %}{{ 'octavia_network' | kolla_address(host) | put_address_in_context('url') }}:{{ octavia_health_manager_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+stats_update_threads = {{ octavia_healthmanager_stats_workers }}
+health_update_threads = {{ octavia_healthmanager_health_workers }}
+
+[controller_worker]
+amp_ssh_key_name = {{ octavia_amp_ssh_key_name }}
+amp_image_tag = {{ octavia_amp_image_tag }}
+
+{% if not octavia_auto_configure | bool %}
+{% if octavia_amp_image_owner_id is defined %}
+amp_image_owner_id = {{ octavia_amp_image_owner_id }}
+{% endif %}
+{% if octavia_amp_boot_network_list is defined %}
+amp_boot_network_list = {{ octavia_amp_boot_network_list }}
+{% endif %}
+{% if octavia_amp_secgroup_list is defined %}
+amp_secgroup_list = {{ octavia_amp_secgroup_list }}
+{% endif %}
+{% if octavia_amp_flavor_id is defined %}
+amp_flavor_id = {{ octavia_amp_flavor_id }}
+{% endif %}
+{% else %}
+amp_image_owner_id = {{ project_info.openstack_projects.0.id }}
+amp_boot_network_list = {{ network_info.id }}
+amp_secgroup_list = {{ (sec_grp_info.results | selectattr('item.name', 'equalto', octavia_amp_security_groups['mgmt-sec-grp'].name) | list).0.secgroup.id }}
+amp_flavor_id = {{ amphora_flavor_info.id }}
+{% endif %}
+
+client_ca = /etc/octavia/certs/client_ca.cert.pem
+network_driver = allowed_address_pairs_driver
+compute_driver = compute_nova_driver
+amphora_driver = amphora_haproxy_rest_driver
+amp_active_retries = 100
+amp_active_wait_sec = 2
+loadbalancer_topology = {{ octavia_loadbalancer_topology }}
+
+[oslo_messaging]
+topic = octavia_prov
+rpc_thread_pool_size = 2
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = {{ service_name == 'octavia-api' }}
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+{% if octavia_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ octavia_policy_file }}
+{% endif %}
+
+[glance]
+region_name = {{ openstack_region_name }}
+endpoint_type = internal
+ca_certificates_file = {{ openstack_cacert }}
+
+[neutron]
+region_name = {{ openstack_region_name }}
+endpoint_type = internal
+ca_certificates_file = {{ openstack_cacert }}
+
+[nova]
+region_name = {{ openstack_region_name }}
+endpoint_type = internal
+ca_certificates_file = {{ openstack_cacert }}

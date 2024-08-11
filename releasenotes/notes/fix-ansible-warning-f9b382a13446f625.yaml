@@ -1,0 +1,5 @@
+---
+fixes:
+  - Fixed Ansible warning when using ansible>2.2. Avoid using Ansible reserved
+    action and serial word in playbooks. Use ``kolla_action`` and
+    ``kolla_serial`` instead.

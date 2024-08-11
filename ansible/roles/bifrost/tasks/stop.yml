@@ -1,0 +1,34 @@
+---
+- block:
+    - name: Check if bifrost_deploy container is running
+      become: true
+      kolla_container_facts:
+        container_engine: "{{ kolla_container_engine }}"
+        name:
+          - bifrost_deploy
+      register: container_facts
+
+    - block:
+        # Ensure that all services are stopped gracefully, and in a sensible
+        # order.
+        - name: Stop services gracefully
+          become: true
+          command: "{{ kolla_container_engine }} exec bifrost_deploy systemctl stop {{ item }}.service"
+          with_items:
+            - ironic
+            - ironic-inspector
+            - mariadb
+            - nginx
+
+        - name: Stopping bifrost_deploy container
+          become: true
+          kolla_docker:
+            action: "stop_container"
+            common_options: "{{ docker_common_options }}"
+            name: "bifrost_deploy"
+
+      when: "'bifrost_deploy' in container_facts"
+
+  when:
+    - inventory_hostname in groups['bifrost']
+    - "'bifrost_deploy' not in skip_stop_containers"

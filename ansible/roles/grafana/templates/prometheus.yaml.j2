@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+- name: Prometheus
+  type: prometheus
+  access: proxy
+  orgId: 1
+  url: {{ grafana_prometheus_url }}
+  version: 1
+  jsonData:
+    timeInterval: {{ prometheus_scrape_interval }}

@@ -1,0 +1,30 @@
+---
+cephadm_ceph_release: "quincy"
+cephadm_ceph_apt_repo: "deb http://download.ceph.com/debian-{{ cephadm_ceph_release }}/ {{ ansible_distribution_release }} main"
+cephadm_use_package_from_distribution: false
+
+cephadm_ceph_rpm_repos:
+  - shortname: "ceph"
+    name: "Ceph {{ ansible_architecture }} repository"
+    url: "http://download.ceph.com/rpm-{{ cephadm_ceph_release }}/el8/{{ ansible_architecture }}/"
+  - shortname: "ceph-noarch"
+    name: "Ceph noarch repository"
+    url: "http://download.ceph.com/rpm-{{ cephadm_ceph_release }}/el8/noarch/"
+
+cephadm_ceph_rpm_gpg_key: http://download.ceph.com/keys/release.gpg
+
+cephadm_ceph_osd_devices:
+  - primary:/dev/cephvg/cephlv
+  - secondary1:/dev/cephvg/cephlv
+  - secondary2:/dev/cephvg/cephlv
+
+cephadm_ceph_pools:
+  - backups
+  - images
+  - vms
+  - volumes
+
+cephadm_ceph_users:
+  - client.glance mon 'profile rbd' osd 'profile rbd pool=images' mgr 'profile rbd pool=images' -o /var/run/ceph/ceph.client.glance.keyring
+  - client.cinder mon 'profile rbd' osd 'profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images' mgr 'profile rbd pool=volumes, profile rbd pool=vms' -o /var/run/ceph/ceph.client.cinder.keyring
+  - client.cinder-backup mon 'profile rbd' osd 'profile rbd pool=backups' mgr 'profile rbd pool=backups' -o /var/run/ceph/ceph.client.cinder-backup.keyring

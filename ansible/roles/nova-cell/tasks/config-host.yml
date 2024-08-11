@@ -1,0 +1,53 @@
+---
+- name: Load and persist br_netfilter module
+  include_role:
+    name: module-load
+  vars:
+    modules:
+      - { name: br_netfilter }
+  when:
+    - inventory_hostname in groups[nova_cell_compute_group]
+
+- name: Enable bridge-nf-call sysctl variables
+  become: true
+  sysctl:
+    name: "{{ item }}"
+    state: present
+    value: "1"
+    sysctl_set: true
+    sysctl_file: "{{ kolla_sysctl_conf_path }}"
+  loop:
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+  when:
+    - set_sysctl | bool
+    - inventory_hostname in groups[nova_cell_compute_group]
+
+# NOTE(yoctozepto): Part of bug #1681461 fix.
+# This part can actually run on any distro and lets us drop the hardcoded
+# chown and chmod from the nova-libvirt image extend_start and make the process
+# more robust.
+- name: Install udev kolla kvm rules
+  become: true
+  template:
+    src: "99-kolla-kvm.rules.j2"
+    dest: "/etc/udev/rules.d/99-kolla-kvm.rules"
+    mode: "0644"
+  when:
+    - enable_nova_libvirt_container | bool
+    - nova_compute_virt_type == 'kvm'
+    - inventory_hostname in groups[nova_cell_compute_group]
+
+# NOTE(yoctozepto): Part of bug #1681461 fix.
+# This part only really makes sense on Ubuntu and would end up being confusing
+# on others. This service changes /dev/kvm permissions.
+- name: Mask qemu-kvm service
+  become: true
+  systemd:
+    name: qemu-kvm.service
+    masked: true
+  when:
+    - enable_nova_libvirt_container | bool
+    - nova_compute_virt_type == 'kvm'
+    - ansible_facts.distribution == 'Ubuntu'
+    - inventory_hostname in groups[nova_cell_compute_group]

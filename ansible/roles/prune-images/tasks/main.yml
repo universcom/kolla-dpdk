@@ -1,0 +1,4 @@
+---
+- import_tasks: validate_docker_execute.yml
+
+- import_tasks: prune_images.yml

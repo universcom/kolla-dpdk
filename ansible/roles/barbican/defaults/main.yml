@@ -1,0 +1,208 @@
+---
+barbican_services:
+  barbican-api:
+    container_name: barbican_api
+    group: barbican-api
+    enabled: true
+    image: "{{ barbican_api_image_full }}"
+    volumes: "{{ barbican_api_default_volumes + barbican_api_extra_volumes }}"
+    dimensions: "{{ barbican_api_dimensions }}"
+    healthcheck: "{{ barbican_api_healthcheck }}"
+    haproxy:
+      barbican_api:
+        enabled: "{{ enable_barbican }}"
+        mode: "http"
+        external: false
+        port: "{{ barbican_api_port }}"
+        listen_port: "{{ barbican_api_listen_port }}"
+        tls_backend: "{{ barbican_enable_tls_backend }}"
+      barbican_api_external:
+        enabled: "{{ enable_barbican }}"
+        mode: "http"
+        external: true
+        port: "{{ barbican_api_port }}"
+        listen_port: "{{ barbican_api_listen_port }}"
+        tls_backend: "{{ barbican_enable_tls_backend }}"
+  barbican-keystone-listener:
+    container_name: barbican_keystone_listener
+    group: barbican-keystone-listener
+    enabled: true
+    image: "{{ barbican_keystone_listener_image_full }}"
+    volumes: "{{ barbican_keystone_listener_default_volumes + barbican_keystone_listener_extra_volumes }}"
+    dimensions: "{{ barbican_keystone_listener_dimensions }}"
+    healthcheck: "{{ barbican_keystone_listener_healthcheck }}"
+  barbican-worker:
+    container_name: barbican_worker
+    group: barbican-worker
+    enabled: true
+    image: "{{ barbican_worker_image_full }}"
+    volumes: "{{ barbican_worker_default_volumes + barbican_worker_extra_volumes }}"
+    dimensions: "{{ barbican_worker_dimensions }}"
+    healthcheck: "{{ barbican_worker_healthcheck }}"
+
+
+####################
+# Database
+####################
+barbican_database_name: "barbican"
+barbican_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}barbican{% endif %}"
+barbican_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+barbican_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ barbican_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+barbican_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+barbican_database_shard:
+  users:
+    - user: "{{ barbican_database_user }}"
+      password: "{{ barbican_database_password }}"
+  rules:
+    - schema: "{{ barbican_database_name }}"
+      shard_id: "{{ barbican_database_shard_id }}"
+
+
+####################
+# Docker
+####################
+barbican_tag: "{{ openstack_tag }}"
+
+barbican_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/barbican-api"
+barbican_api_tag: "{{ barbican_tag }}"
+barbican_api_image_full: "{{ barbican_api_image }}:{{ barbican_api_tag }}"
+
+barbican_keystone_listener_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/barbican-keystone-listener"
+barbican_keystone_listener_tag: "{{ barbican_tag }}"
+barbican_keystone_listener_image_full: "{{ barbican_keystone_listener_image }}:{{ barbican_keystone_listener_tag }}"
+
+barbican_worker_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/barbican-worker"
+barbican_worker_tag: "{{ barbican_tag }}"
+barbican_worker_image_full: "{{ barbican_worker_image }}:{{ barbican_worker_tag }}"
+
+barbican_api_dimensions: "{{ default_container_dimensions }}"
+barbican_keystone_listener_dimensions: "{{ default_container_dimensions }}"
+barbican_worker_dimensions: "{{ default_container_dimensions }}"
+
+barbican_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+barbican_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+barbican_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+barbican_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+barbican_api_healthcheck_test: ["CMD-SHELL", "healthcheck_curl {{ 'https' if barbican_enable_tls_backend | bool else 'http' }}://{{ api_interface_address | put_address_in_context('url') }}:{{ barbican_api_listen_port }}"]
+barbican_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+barbican_api_healthcheck:
+  interval: "{{ barbican_api_healthcheck_interval }}"
+  retries: "{{ barbican_api_healthcheck_retries }}"
+  start_period: "{{ barbican_api_healthcheck_start_period }}"
+  test: "{% if barbican_api_enable_healthchecks | bool %}{{ barbican_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ barbican_api_healthcheck_timeout }}"
+
+barbican_keystone_listener_enable_healthchecks: "{{ enable_container_healthchecks }}"
+barbican_keystone_listener_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+barbican_keystone_listener_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+barbican_keystone_listener_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+barbican_keystone_listener_healthcheck_test: ["CMD-SHELL", "healthcheck_port barbican-keystone-listener {{ om_rpc_port }}"]
+barbican_keystone_listener_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+barbican_keystone_listener_healthcheck:
+  interval: "{{ barbican_keystone_listener_healthcheck_interval }}"
+  retries: "{{ barbican_keystone_listener_healthcheck_retries }}"
+  start_period: "{{ barbican_keystone_listener_healthcheck_start_period }}"
+  test: "{% if barbican_keystone_listener_enable_healthchecks | bool %}{{ barbican_keystone_listener_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ barbican_keystone_listener_healthcheck_timeout }}"
+
+barbican_worker_enable_healthchecks: "{{ enable_container_healthchecks }}"
+barbican_worker_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+barbican_worker_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+barbican_worker_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+barbican_worker_healthcheck_test: ["CMD-SHELL", "healthcheck_port barbican-worker {{ om_rpc_port }}"]
+barbican_worker_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+barbican_worker_healthcheck:
+  interval: "{{ barbican_worker_healthcheck_interval }}"
+  retries: "{{ barbican_worker_healthcheck_retries }}"
+  start_period: "{{ barbican_worker_healthcheck_start_period }}"
+  test: "{% if barbican_worker_enable_healthchecks | bool %}{{ barbican_worker_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ barbican_worker_healthcheck_timeout }}"
+
+barbican_api_default_volumes:
+  - "{{ node_config_directory }}/barbican-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "barbican:/var/lib/barbican/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/barbican/barbican:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/barbican' if barbican_dev_mode | bool else '' }}"
+barbican_keystone_listener_default_volumes:
+  - "{{ node_config_directory }}/barbican-keystone-listener/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/barbican/barbican:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/barbican' if barbican_dev_mode | bool else '' }}"
+barbican_worker_default_volumes:
+  - "{{ node_config_directory }}/barbican-worker/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/barbican/barbican:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/barbican' if barbican_dev_mode | bool else '' }}"
+
+barbican_extra_volumes: "{{ default_extra_volumes }}"
+barbican_api_extra_volumes: "{{ barbican_extra_volumes }}"
+barbican_keystone_listener_extra_volumes: "{{ barbican_extra_volumes }}"
+barbican_worker_extra_volumes: "{{ barbican_extra_volumes }}"
+
+####################
+# OpenStack
+####################
+barbican_logging_debug: "{{ openstack_logging_debug }}"
+
+barbican_keystone_user: "barbican"
+barbican_keymanager_role: "key-manager:service-admin"
+barbican_creator_role: "creator"
+barbican_observer_role: "observer"
+barbican_audit_role: "audit"
+
+openstack_barbican_auth: "{{ openstack_auth }}"
+
+barbican_api_workers: "{{ openstack_service_workers }}"
+
+####################
+# Kolla
+####################
+barbican_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+barbican_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+barbican_dev_mode: "{{ kolla_dev_mode }}"
+barbican_source_version: "{{ kolla_source_version }}"
+
+####################
+# Keystone
+####################
+barbican_ks_services:
+  - name: "barbican"
+    type: "key-manager"
+    description: "Barbican Key Management Service"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ barbican_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ barbican_public_endpoint }}'}
+
+barbican_ks_users:
+  - project: "service"
+    user: "{{ barbican_keystone_user }}"
+    password: "{{ barbican_keystone_password }}"
+    role: "admin"
+
+barbican_ks_roles:
+  - "{{ barbican_keymanager_role }}"
+  - "{{ barbican_creator_role }}"
+  - "{{ barbican_observer_role }}"
+  - "{{ barbican_audit_role }}"
+
+####################
+# Notification
+####################
+barbican_notification_topics:
+  - name: notifications
+    enabled: "{{ enable_ceilometer | bool }}"
+
+barbican_enabled_notification_topics: "{{ barbican_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# TLS
+####################
+barbican_enable_tls_backend: "{{ kolla_enable_tls_backend }}"

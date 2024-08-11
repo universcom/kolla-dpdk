@@ -1,0 +1,35 @@
+# NOTE(yoctozepto): rabbitmq uses the raw format (e.g. fd::) of IPv6 address;
+# despite specifying port via colon, the url format (e.g. [fd::]) is not accepted
+{% if rabbitmq_enable_tls | bool %}
+listeners.tcp = none
+listeners.ssl.1 = {{ api_interface_address }}:{{ role_rabbitmq_port }}
+{% else %}
+listeners.tcp.1 = {{ api_interface_address }}:{{ role_rabbitmq_port }}
+{% endif %}
+cluster_partition_handling = {{ rabbitmq_cluster_partition_handling }}
+
+management.listener.ip = {{ api_interface_address }}
+management.listener.port = {{ role_rabbitmq_management_port }}
+management.load_definitions = /etc/rabbitmq/definitions.json
+{% for key, value in rabbitmq_extra_config.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+
+cluster_formation.peer_discovery_backend = rabbit_peer_discovery_classic_config
+{% for host in groups[role_rabbitmq_groups] %}
+cluster_formation.classic_config.nodes.{{ loop.index0 }} = rabbit@{{ hostvars[host].ansible_facts.hostname }}
+{% endfor %}
+
+{% if rabbitmq_enable_tls | bool %}
+# https://www.rabbitmq.com/ssl.html
+ssl_options.certfile = /etc/rabbitmq/certs/{{ project_name }}-cert.pem
+ssl_options.keyfile = /etc/rabbitmq/certs/{{ project_name }}-key.pem
+{% for key, value in rabbitmq_tls_options.items() %}
+ssl_options.{{ key }} = {{ value }}
+{% endfor %}
+{% endif %}
+
+{% if 'rabbitmq_prometheus' in rabbitmq_enabled_plugins | map(attribute='name') %}
+prometheus.tcp.ip = {{ api_interface_address }}
+prometheus.tcp.port = {{ role_rabbitmq_prometheus_port }}
+{% endif %}

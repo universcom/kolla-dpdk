@@ -1,0 +1,6 @@
+---
+fixes:
+  - |
+    Changes Manila cephfs share driver to
+    ``manila.share.drivers.cephfs.driver.CephFSDriver``, as the old driver was
+    deprecated.

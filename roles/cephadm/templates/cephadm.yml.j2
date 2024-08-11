@@ -1,0 +1,23 @@
+{% for host in groups['all'] %}
+---
+service_type: host
+hostname: {{ hostvars[host]['ansible_hostname'] }}
+addr: {{ hostvars[host]['ansible_vxlan0']['ipv4']['address'] }}
+labels: 
+- _admin
+- mon
+- mgr
+- osd
+{% endfor %}
+---
+service_type: mon
+placement:
+  label: "mon"
+---
+service_type: mgr
+placement:
+  label: "mgr"
+---
+service_type: crash
+placement:
+  host_pattern: "*"

@@ -1,0 +1,5 @@
+---
+features:
+  - Configures all openstack services to use the globally defined Certificate
+    Authority file to verify HTTPS connections. The global CA file is
+    configured by the ``openstack_cacert`` parameter.

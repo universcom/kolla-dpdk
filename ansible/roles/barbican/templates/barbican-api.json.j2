@@ -1,0 +1,52 @@
+{
+    "command": "uwsgi --master --emperor /etc/barbican/vassals --logto /var/log/kolla/barbican/barbican_api_uwsgi_access.log --logfile-chmod 644",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/barbican.conf",
+            "dest": "/etc/barbican/barbican.conf",
+            "owner": "barbican",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/vassals/barbican-api.ini",
+            "dest": "/etc/barbican/vassals/barbican-api.ini",
+            "owner": "barbican",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/barbican-api-paste.ini",
+            "dest": "/etc/barbican/barbican-api-paste.ini",
+            "owner": "barbican",
+            "perm": "0600",
+            "optional": true
+        }{% if barbican_enable_tls_backend | bool %},
+        {
+            "source": "{{ container_config_directory }}/barbican-cert.pem",
+            "dest": "/etc/barbican/certs/barbican-cert.pem",
+            "owner": "barbican",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/barbican-key.pem",
+            "dest": "/etc/barbican/certs/barbican-key.pem",
+            "owner": "barbican",
+            "perm": "0600"
+        }{% endif %}{% if barbican_policy_file is defined %},
+        {
+            "source": "{{ container_config_directory }}/{{ barbican_policy_file }}",
+            "dest": "/etc/barbican/{{ barbican_policy_file }}",
+            "owner": "barbican",
+            "perm": "0600"
+        }{% endif %}
+    ],
+    "permissions": [
+       {
+            "path": "/var/lib/barbican",
+            "owner": "barbican:barbican"
+       },
+       {
+            "path": "/var/log/kolla/barbican",
+            "owner": "barbican:barbican"
+       }
+    ]
+}

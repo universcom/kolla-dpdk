@@ -1,0 +1,4 @@
+---
+features:
+  - Add designate-producer ansible role. Orchestrates periodic tasks that are
+    run by designate.

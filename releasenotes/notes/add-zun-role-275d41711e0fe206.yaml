@@ -1,0 +1,5 @@
+---
+features:
+  - Add zun ansible role. Zun is an OpenStack project for the management of
+    containers. Please see `Zun quick start guide
+    <https://github.com/openstack/zun/blob/master/doc/source/dev/quickstart.rst>`__.

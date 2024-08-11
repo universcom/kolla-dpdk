@@ -1,0 +1,38 @@
+---
+# Allow to get a clean way to load and persist kernel modules
+
+- name: Run tasks only for specific kolla_action
+  when:
+    - kolla_action != "config"
+  block:
+    - name: Load modules
+      become: true
+      modprobe:
+        name: "{{ item.name }}"
+        params: "{{ item.params | default(omit) }}"
+        state: "{{ item.state | default('present') }}"
+      loop: "{{ modules }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Persist modules via modules-load.d
+      become: true
+      template:
+        src: module-load.conf.j2
+        dest: "/etc/modules-load.d/{{ item.name }}.conf"
+      loop: "{{ modules }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - (item.state | default('present')) == 'present'
+
+    - name: Drop module persistence
+      become: true
+      file:
+        path: "/etc/modules-load.d/{{ item.name }}.conf"
+        state: absent
+      loop: "{{ modules }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - (item.state | default('present')) == 'absent'

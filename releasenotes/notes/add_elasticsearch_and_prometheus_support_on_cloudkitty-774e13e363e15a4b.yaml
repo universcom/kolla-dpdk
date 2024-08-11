@@ -1,0 +1,18 @@
+---
+features:
+  - |
+    Adds support for Elasticsearch storage backend with Cloudkitty:
+    This feature allows for storage of Cloudkitty rating documents directly
+    within an Elasticsearch cluster.
+
+    If you already have an Elasticsearch cluster running for logging a new
+    cloudkitty specific index will be used. This allows you to use Kibana,
+    Grafana or another interface to browse your rating data and create
+    an appropriate dashboard or build an appropriate billing service over it.
+
+  - |
+    Adds support for Prometheus as a fetcher/collector for Cloudkitty:
+    This feature allows for use of Prometheus metrics as your source of rating.
+    Using Prometheus allows for rating almost any OpenStack object directly
+    from the Kolla provided exporters (openstack_exporter) or your own
+    custom exporters.

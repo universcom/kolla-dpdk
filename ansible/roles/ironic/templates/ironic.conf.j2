@@ -1,0 +1,202 @@
+[DEFAULT]
+{% if not ironic_enable_keystone_integration | bool %}
+auth_strategy = noauth
+{% endif %}
+debug = {{ ironic_logging_debug }}
+
+log_dir = /var/log/kolla/ironic
+
+transport_url = {{ rpc_transport_url }}
+
+{% if pin_release_version is defined %}
+pin_release_version = {{ pin_release_version }}
+{% endif %}
+
+my_ip = {{ api_interface_address }}
+
+{% if ironic_enabled_notification_topics %}
+notification_level = info
+{% endif %}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+{% if ironic_enabled_notification_topics %}
+driver = messagingv2
+topics = {{ ironic_enabled_notification_topics | map(attribute='name') | join(',') }}
+{% else %}
+driver = noop
+{% endif %}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = {{ service_name == 'ironic-api' }}
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+{% if ironic_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ ironic_policy_file }}
+{% endif %}
+
+{% if service_name == 'ironic-conductor' %}
+[conductor]
+automated_clean=false
+{% endif %}
+
+[database]
+connection = mysql+pymysql://{{ ironic_database_user }}:{{ ironic_database_password }}@{{ ironic_database_address }}/{{ ironic_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+max_retries = -1
+
+{% if ironic_enable_keystone_integration | bool %}
+[keystone_authtoken]
+service_type = baremetal
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif %}
+
+{% if enable_cinder | bool %}
+[cinder]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% endif %}
+
+{% if enable_glance | bool %}
+[glance]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% endif %}
+
+{% if enable_neutron | bool %}
+[neutron]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cleaning_network = {{ ironic_cleaning_network }}
+cafile = {{ openstack_cacert }}
+{% endif %}
+
+{% if enable_nova | bool %}
+[nova]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% endif %}
+
+{% if enable_swift | bool %}
+[swift]
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% endif %}
+
+[inspector]
+{% if ironic_enable_keystone_integration | bool %}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% else %}
+auth_type = none
+endpoint_override = {{ ironic_inspector_internal_endpoint }}
+{% endif %}
+
+[service_catalog]
+{% if ironic_enable_keystone_integration | bool %}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = default
+project_name = service
+username = {{ ironic_keystone_user }}
+password = {{ ironic_keystone_password }}
+region_name = {{ openstack_region_name }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+{% else %}
+auth_type = none
+endpoint_override = {{ ironic_internal_endpoint }}
+{% endif %}
+
+[agent]
+deploy_logs_local_path = /var/log/kolla/ironic
+deploy_logs_storage_backend = local
+deploy_logs_collect = always
+
+[pxe]
+kernel_append_params = nofb nomodeset vga=normal console=tty0 console=ttyS0,{{ ironic_console_serial_speed }}
+tftp_root = /var/lib/ironic/tftpboot
+tftp_master_path = /var/lib/ironic/master_images
+tftp_server = {{ api_interface_address }}
+
+[deploy]
+http_root = /var/lib/ironic/httpboot
+http_url = {{ ironic_http_url }}
+
+[oslo_middleware]
+enable_proxy_headers_parsing = True
+
+{% if not enable_neutron | bool %}
+[dhcp]
+dhcp_provider = none
+{% endif %}

@@ -1,0 +1,43 @@
+# ml2_conf.ini
+[ml2]
+# Changing type_drivers after bootstrap can lead to database inconsistencies
+type_drivers = {{ neutron_type_drivers }}
+tenant_network_types = {{ neutron_tenant_network_types }}
+{% if tunnel_address_family == 'ipv6' %}
+overlay_ip_version = 6
+{% endif %}
+{% if neutron_mechanism_drivers %}
+mechanism_drivers = {{ neutron_mechanism_drivers | map(attribute='name') | join(',') }}
+{% endif %}
+{% if neutron_extension_drivers %}
+extension_drivers = {{ neutron_extension_drivers | map(attribute='name') | join(',') }}
+{% endif %}
+
+[ml2_type_vlan]
+{% if enable_ironic | bool %}
+network_vlan_ranges = physnet1
+{% else %}
+network_vlan_ranges =
+{% endif %}
+
+[ml2_type_flat]
+{% if enable_ironic | bool %}
+flat_networks = *
+{% else %}
+flat_networks = {% for interface in neutron_external_interface.split(',') %}physnet{{ loop.index0 + 1 }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif %}
+
+[ml2_type_vxlan]
+vni_ranges = 1:1000
+
+{% if neutron_plugin_agent == 'ovn' %}
+[ml2_type_geneve]
+vni_ranges = 1001:2000
+max_header_size = 38
+
+[ovn]
+ovn_nb_connection = {{ ovn_nb_connection }}
+ovn_sb_connection = {{ ovn_sb_connection }}
+ovn_metadata_enabled = True
+enable_distributed_floating_ip = {{ neutron_ovn_distributed_fip | bool }}
+{% endif %}

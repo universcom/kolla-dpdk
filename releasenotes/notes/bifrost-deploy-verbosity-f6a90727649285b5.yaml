@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    Adds ``bifrost_deploy_verbosity`` parameter. It allows to change
+    the verbosity of the Bifrost bootstrap task.
+    ``-vvvv`` is a default value.

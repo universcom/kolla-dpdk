@@ -1,0 +1,34 @@
+---
+- name: Wait for Ironic nodes not to wait
+  become: true
+  command: >
+    {{ kolla_container_engine }} exec kolla_toolbox openstack
+    --os-interface {{ openstack_interface }}
+    --os-auth-url {{ openstack_auth.auth_url }}
+    --os-username {{ openstack_auth.username }}
+    --os-password {{ openstack_auth.password }}
+    --os-identity-api-version 3
+    --os-user-domain-name {{ openstack_auth.user_domain_name }}
+    --os-system-scope {{ openstack_auth.system_scope }}
+    --os-region-name {{ openstack_region_name }}
+    {% if openstack_cacert != '' %}--os-cacert {{ openstack_cacert }}{% endif %}
+    baremetal node list --format json --column "Provisioning State"
+  register: ironic_nodes
+  changed_when: false
+  retries: 10
+  delay: 30
+  until:
+    - ironic_nodes is success
+    - (ironic_nodes.stdout |
+       from_json |
+       map(attribute='Provisioning State') |
+       select('search', '\\bwait\\b') |
+       length) == 0
+  run_once: true
+  when: not ironic_upgrade_skip_wait_check | bool
+
+- include_tasks: rolling_upgrade.yml
+  when: ironic_enable_rolling_upgrade | bool
+
+- include_tasks: legacy_upgrade.yml
+  when: not ironic_enable_rolling_upgrade | bool

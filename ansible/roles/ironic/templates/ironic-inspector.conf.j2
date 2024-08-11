@@ -1,0 +1,90 @@
+[DEFAULT]
+debug = {{ ironic_logging_debug }}
+log_dir = /var/log/kolla/ironic-inspector
+
+{% if not ironic_enable_keystone_integration | bool %}
+auth_strategy = noauth
+{% endif %}
+listen_address = {{ api_interface_address }}
+listen_port = {{ ironic_inspector_listen_port }}
+transport_url = {{ rpc_transport_url }}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+[ironic]
+{% if ironic_enable_keystone_integration | bool %}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+project_name = service
+username = {{ ironic_inspector_keystone_user }}
+password = {{ ironic_inspector_keystone_password }}
+valid_interfaces = internal
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
+{% else %}
+auth_type = none
+endpoint_override = {{ ironic_internal_endpoint }}
+{% endif %}
+
+{% if ironic_enable_keystone_integration | bool %}
+[keystone_authtoken]
+service_type = baremetal-introspection
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+project_name = service
+username = {{ ironic_inspector_keystone_user }}
+password = {{ ironic_inspector_keystone_password }}
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
+
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif %}
+
+{% if ironic_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ ironic_policy_file }}
+{% endif %}
+
+[database]
+connection = mysql+pymysql://{{ ironic_inspector_database_user }}:{{ ironic_inspector_database_password }}@{{ ironic_inspector_database_address }}/{{ ironic_inspector_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+
+[processing]
+ramdisk_logs_dir = /var/log/kolla/ironic-inspector
+
+[pxe_filter]
+driver = {{ ironic_inspector_pxe_filter }}
+
+{% if ironic_inspector_pxe_filter == 'iptables' %}
+[iptables]
+dnsmasq_interface = {{ ironic_dnsmasq_interface }}
+{% endif %}
+
+[coordination]
+{% if ironic_coordination_backend == 'redis' %}
+backend_url = {{ redis_connection_string }}
+{% elif ironic_coordination_backend == 'etcd' %}
+# NOTE(yoctozepto): we must use etcd3gw (aka etcd3+http) due to issues with alternative (etcd3) and eventlet (as used by cinder)
+# see https://bugs.launchpad.net/kolla-ansible/+bug/1854932
+# and https://review.opendev.org/466098 for details
+backend_url = etcd3+{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ etcd_client_port }}{% if openstack_cacert %}?ca_cert={{ openstack_cacert }}{% endif %}
+{% endif %}

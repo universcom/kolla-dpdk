@@ -1,0 +1,11 @@
+{
+    "command": "/opt/cadvisor --port={{ prometheus_cadvisor_port }} --log_dir=/var/log/kolla/prometheus{% if prometheus_cadvisor_cmdline_extras %} {{ prometheus_cadvisor_cmdline_extras }}{% endif %}",
+    "config_files": [],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/prometheus",
+            "owner": "prometheus:prometheus",
+            "recurse": true
+        }
+    ]
+}

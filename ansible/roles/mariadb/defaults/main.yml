@@ -1,0 +1,142 @@
+---
+mariadb_services:
+  mariadb:
+    container_name: mariadb
+    group: "{{ mariadb_shard_group }}"
+    enabled: true
+    image: "{{ mariadb_image_full }}"
+    volumes: "{{ mariadb_default_volumes + mariadb_extra_volumes }}"
+    dimensions: "{{ mariadb_dimensions }}"
+    healthcheck: "{{ mariadb_healthcheck }}"
+    environment:
+      MYSQL_USERNAME: "{{ mariadb_monitor_user }}"
+      MYSQL_PASSWORD: "{% if enable_proxysql | bool %}{{ mariadb_monitor_password }}{% endif %}"
+      MYSQL_HOST: "{{ api_interface_address }}"
+      AVAILABLE_WHEN_DONOR: "1"
+    haproxy:
+      mariadb:
+        enabled: "{{ enable_mariadb | bool and not enable_external_mariadb_load_balancer | bool }}"
+        mode: "tcp"
+        port: "{{ database_port }}"
+        listen_port: "{{ mariadb_port }}"
+        frontend_tcp_extra:
+          - "option clitcpka"
+          - "timeout client 3600s"
+        backend_tcp_extra:
+          - "option srvtcpka"
+          - "timeout server 3600s"
+          - "{% if enable_mariadb_clustercheck | bool %}option httpchk{% endif %}"
+        custom_member_list: "{{ internal_haproxy_members.split(';') }}"
+      mariadb_external_lb:
+        enabled: "{{ enable_external_mariadb_load_balancer | bool }}"
+        mode: "tcp"
+        port: "{{ database_port }}"
+        listen_port: "{{ mariadb_port }}"
+        frontend_tcp_extra:
+          - "option clitcpka"
+          - "timeout client 3600s"
+        backend_tcp_extra:
+          - "option srvtcpka"
+          - "timeout server 3600s"
+        custom_member_list: "{{ external_haproxy_members.split(';') }}"
+  mariadb-clustercheck:
+    container_name: mariadb_clustercheck
+    group: "{{ mariadb_shard_group }}"
+    enabled: "{{ enable_mariadb_clustercheck | bool }}"
+    image: "{{ mariadb_clustercheck_image_full }}"
+    volumes: "{{ mariadb_clustercheck_default_volumes + mariadb_clustercheck_extra_volumes }}"
+    dimensions: "{{ mariadb_clustercheck_dimensions }}"
+    environment:
+      MYSQL_USERNAME: "{{ mariadb_monitor_user }}"
+      MYSQL_PASSWORD: "{% if enable_proxysql | bool %}{{ mariadb_monitor_password }}{% endif %}"
+      MYSQL_HOST: "{{ api_interface_address }}"
+      AVAILABLE_WHEN_DONOR: "1"
+
+####################
+# Database
+####################
+database_cluster_name: "openstack"
+database_max_timeout: 120
+
+####################
+# HAProxy
+####################
+internal_haproxy_members: "{% for host in mariadb_default_database_shard_hosts %} server {{ hostvars[host].ansible_facts.hostname }} {{ 'api' | kolla_address(host) }}:{{ mariadb_port }} check port {% if enable_mariadb_clustercheck | bool %}{{ mariadb_clustercheck_port }}{% else %}{{ mariadb_port }}{% endif %} inter 2000 rise 2 fall 5{% if not loop.first %} backup{% endif %};{% endfor %}"
+external_haproxy_members: "{% for host in mariadb_default_database_shard_hosts %} server {{ host }} {{ host }}:{{ mariadb_port }} check port {% if enable_mariadb_clustercheck | bool %}{{ mariadb_clustercheck_port }}{% else %}{{ mariadb_port }}{% endif %} inter 2000 rise 2 fall 5{% if not loop.first %} backup{% endif %};{% endfor %}"
+
+####################
+# Docker
+####################
+mariadb_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/mariadb-server"
+mariadb_tag: "{{ openstack_tag }}"
+mariadb_image_full: "{{ mariadb_image }}:{{ mariadb_tag }}"
+
+mariadb_clustercheck_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/mariadb-clustercheck"
+mariadb_clustercheck_tag: "{{ mariadb_tag }}"
+mariadb_clustercheck_image_full: "{{ mariadb_clustercheck_image }}:{{ mariadb_clustercheck_tag }}"
+
+mariadb_dimensions: "{{ default_container_dimensions }}"
+mariadb_clustercheck_dimensions: "{{ default_container_dimensions }}"
+
+mariadb_default_volumes:
+  - "{{ node_config_directory }}/mariadb/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "mariadb:/var/lib/mysql"
+  - "kolla_logs:/var/log/kolla/"
+mariadb_clustercheck_default_volumes:
+  - "{{ node_config_directory }}/mariadb-clustercheck/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+
+mariadb_extra_volumes: "{{ default_extra_volumes }}"
+mariadb_clustercheck_extra_volumes: "{{ default_extra_volumes }}"
+
+mariadb_enable_healthchecks: "{{ enable_container_healthchecks }}"
+mariadb_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+mariadb_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+mariadb_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+mariadb_healthcheck_test: ["CMD-SHELL", "/usr/bin/clustercheck"]
+mariadb_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+mariadb_healthcheck:
+  interval: "{{ mariadb_healthcheck_interval }}"
+  retries: "{{ mariadb_healthcheck_retries }}"
+  start_period: "{{ mariadb_healthcheck_start_period }}"
+  test: "{% if mariadb_enable_healthchecks | bool %}{{ mariadb_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ mariadb_healthcheck_timeout }}"
+
+########################################
+# Vars used within recover_cluster.yml
+########################################
+mariadb_service: "{{ mariadb_services['mariadb'] }}"
+mariadb_recover_tmp_file_path: "/tmp/kolla_mariadb_recover_inventory_name_{{ mariadb_shard_name }}"
+
+###############
+# WSREP options
+###############
+mariadb_wsrep_extra_provider_options: []
+
+####################
+# Backups
+####################
+mariabackup_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/mariadb-server"
+mariabackup_tag: "{{ mariadb_tag }}"
+mariabackup_image_full: "{{ mariabackup_image }}:{{ mariabackup_tag }}"
+
+mariadb_backup_host: "{{ groups[mariadb_shard_group][0] }}"
+mariadb_backup_database_schema: "PERCONA_SCHEMA"
+mariadb_backup_database_user: "{% if mariadb_loadbalancer == 'haproxy' %}backup{% else %}{{ mariadb_shard_backup_user_prefix }}{{ mariadb_shard_id | string }}{% endif %}"
+mariadb_backup_type: "full"
+mariadb_backup_possible: "{{ mariadb_loadbalancer != 'haproxy' or inventory_hostname in mariadb_default_database_shard_hosts }}"
+
+####################
+# Clustercheck
+####################
+enable_mariadb_clustercheck: "{{ enable_haproxy }}"
+
+####################
+# Sharding
+####################
+mariadb_shard_database_user: "{% if mariadb_loadbalancer == 'haproxy' %}{{ database_user }}{% else %}{{ mariadb_shard_root_user_prefix }}{{ mariadb_shard_id | string }}{% endif %}"
+mariadb_database_shard: "{{ mariadb_shards_info }}"

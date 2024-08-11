@@ -1,0 +1,25 @@
+#jinja2: trim_blocks: False
+{% if fluentd_enabled_input_openstack_services | length > 0 -%}
+<source>
+  @type tail
+  path {% for service in fluentd_enabled_input_openstack_services %}/var/log/kolla/{{ service }}/*.log{% if not loop.last %},{% endif %}{% endfor %}
+  exclude_path ["/var/log/kolla/neutron/dnsmasq.log",
+                "/var/log/kolla/ironic/dnsmasq.log",
+                "/var/log/kolla/*/*-access.log",
+                "/var/log/kolla/*/*-error.log",
+                "/var/log/kolla/*/*_access.log",
+                "/var/log/kolla/*/*_error.log"]
+  pos_file /var/run/td-agent/kolla-openstack.pos
+  tag kolla.*
+  ignore_repeated_permission_error true
+  enable_watch_timer false
+  <parse>
+    @type multiline
+    format_firstline /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3} \d+ \S+ \S+ \[.*\]/
+    format1 /^(?<Timestamp>\S+ \S+) (?<Pid>\d+) (?<log_level>\S+) (?<python_module>\S+) \[(\S+ req-)?((?<request_id>\S+) (?<user_id>\S+) (?<tenant_id>\S+) (?<domain_id>\S+) (?<system_scope>\S+) (?<user_domain>\S+) (?<project_domain>\S+)|-)\] (?<Payload>.*)?$/
+    time_key Timestamp
+    keep_time_key true
+    time_format %F %T.%L
+  </parse>
+</source>
+{%- endif %}
