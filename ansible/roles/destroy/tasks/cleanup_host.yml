@@ -1,0 +1,39 @@
+---
+- name: Destroying Kolla host configuration
+  become: true
+  script: ../tools/cleanup-host
+  environment:
+    enable_haproxy: "{{ enable_haproxy }}"
+    enable_swift: "{{ enable_swift }}"
+    glance_file_datadir_volume: "{{ glance_file_datadir_volume }}"
+    nova_instance_datadir_volume: "{{ nova_instance_datadir_volume }}"
+    gnocchi_metric_datadir_volume: "{{ gnocchi_metric_datadir_volume }}"
+    influxdb_datadir_volume: "{{ influxdb_datadir_volume }}"
+    kolla_internal_vip_address: "{{ kolla_internal_vip_address }}"
+    kolla_external_vip_address: "{{ kolla_external_vip_address }}"
+    kolla_dev_repos_directory: "{{ kolla_dev_repos_directory }}"
+    opensearch_datadir_volume: "{{ opensearch_datadir_volume }}"
+    destroy_include_dev: "{{ destroy_include_dev }}"
+
+- block:
+    - name: Disable octavia-interface service
+      service:
+        name: octavia-interface
+        enabled: no
+        state: stopped
+      failed_when: false
+
+    - name: Remove octavia-interface service file
+      file:
+        path: /etc/systemd/system/octavia-interface.service
+        state: absent
+
+    - name: Remove dhclient.conf
+      file:
+        path: /etc/dhcp/octavia-dhclient.conf
+        state: absent
+  when:
+    - enable_octavia | bool
+    - octavia_auto_configure | bool
+    - octavia_network_type == 'tenant'
+    - inventory_hostname in groups['octavia-health-manager']

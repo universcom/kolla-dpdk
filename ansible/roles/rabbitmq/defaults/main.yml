@@ -1,0 +1,114 @@
+---
+rabbitmq_services:
+  rabbitmq:
+    container_name: "{{ project_name }}"
+    group: "{{ role_rabbitmq_groups }}"
+    enabled: true
+    image: "{{ rabbitmq_image_full }}"
+    bootstrap_environment:
+      KOLLA_BOOTSTRAP:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+      RABBITMQ_CLUSTER_COOKIE: "{{ role_rabbitmq_cluster_cookie }}"
+      RABBITMQ_LOG_DIR: "/var/log/kolla/{{ project_name }}"
+    environment:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+      RABBITMQ_CLUSTER_COOKIE: "{{ role_rabbitmq_cluster_cookie }}"
+      RABBITMQ_LOG_DIR: "/var/log/kolla/{{ project_name }}"
+    volumes: "{{ rabbitmq_default_volumes + rabbitmq_extra_volumes }}"
+    dimensions: "{{ rabbitmq_dimensions }}"
+    healthcheck: "{{ rabbitmq_healthcheck }}"
+    haproxy:
+      rabbitmq_management:
+        enabled: "{{ enable_rabbitmq }}"
+        mode: "http"
+        port: "{{ rabbitmq_management_port }}"
+        host_group: "rabbitmq"
+      rabbitmq_outward_management:
+        enabled: "{{ enable_outward_rabbitmq }}"
+        mode: "http"
+        port: "{{ outward_rabbitmq_management_port }}"
+        host_group: "outward-rabbitmq"
+      rabbitmq_outward_external:
+        enabled: "{{ enable_outward_rabbitmq }}"
+        mode: "tcp"
+        external: true
+        port: "{{ outward_rabbitmq_port }}"
+        host_group: "outward-rabbitmq"
+        frontend_tcp_extra:
+          - "timeout client {{ haproxy_outward_rabbitmq_client_timeout }}"
+        backend_tcp_extra:
+          - "timeout server {{ haproxy_outward_rabbitmq_server_timeout }}"
+
+####################
+# HAProxy
+####################
+haproxy_outward_rabbitmq_client_timeout: "1h"
+haproxy_outward_rabbitmq_server_timeout: "1h"
+
+
+####################
+# Docker
+####################
+rabbitmq_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/rabbitmq"
+rabbitmq_tag: "{{ openstack_tag }}"
+rabbitmq_image_full: "{{ rabbitmq_image }}:{{ rabbitmq_tag }}"
+rabbitmq_dimensions: "{{ default_container_dimensions }}"
+
+rabbitmq_enable_healthchecks: "{{ enable_container_healthchecks }}"
+rabbitmq_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+rabbitmq_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+rabbitmq_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+rabbitmq_healthcheck_test: ["CMD-SHELL", "healthcheck_rabbitmq"]
+rabbitmq_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+rabbitmq_healthcheck:
+  interval: "{{ rabbitmq_healthcheck_interval }}"
+  retries: "{{ rabbitmq_healthcheck_retries }}"
+  start_period: "{{ rabbitmq_healthcheck_start_period }}"
+  test: "{% if rabbitmq_enable_healthchecks | bool %}{{ rabbitmq_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ rabbitmq_healthcheck_timeout }}"
+
+rabbitmq_default_volumes:
+  - "{{ node_config_directory }}/{{ project_name }}/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "{{ project_name }}:/var/lib/rabbitmq/"
+  - "kolla_logs:/var/log/kolla/"
+rabbitmq_extra_volumes: "{{ default_extra_volumes }}"
+
+####################
+# Message-Broker
+####################
+rabbitmq_pid_file: "/var/lib/rabbitmq/mnesia/rabbitmq.pid"
+rabbitmq_server_additional_erl_args: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+# Dict of TLS options for RabbitMQ. Keys will be prefixed with 'ssl_options.'.
+rabbitmq_tls_options: {}
+# To avoid split-brain
+rabbitmq_cluster_partition_handling: "pause_minority"
+rabbitmq_extra_config: {}
+# For consistency use "when-synced", for availability use "always"
+# The rabbitmq default for ha queues is "when-synced"
+# More details see:
+# https://www.rabbitmq.com/ha.html#promoting-unsynchronised-mirrors
+rabbitmq_ha_promote_on_shutdown:
+# If no replica count is specified, replicates across all nodes with definition
+# "ha-mode":"all". Otherwise, uses
+# "ha-mode":"exactly","ha-params":{{ rabbitmq_ha_replica_count | int }}
+rabbitmq_ha_replica_count:
+# If no TTL is specified, messages will not expire
+rabbitmq_message_ttl_ms:
+# If no queue expiry is specified, queues will not expire
+rabbitmq_queue_expiry_ms:
+
+####################
+# Plugins
+####################
+rabbitmq_enable_prometheus_plugin: "{{ enable_prometheus }}"
+rabbitmq_plugins:
+  - name: "rabbitmq_management"
+    enabled: True
+  - name: "rabbitmq_prometheus"
+    enabled: "{{ rabbitmq_enable_prometheus_plugin | bool }}"
+
+rabbitmq_enabled_plugins: "{{ rabbitmq_plugins | selectattr('enabled', 'equalto', true) | list }}"
+
+kolla_externally_managed_cert: False

@@ -1,0 +1,75 @@
+---
+- name: Checking for any running keystone_fernet containers
+  become: true
+  kolla_container_facts:
+    container_engine: "{{ kolla_container_engine }}"
+    name:
+      - keystone_fernet
+  register: container_facts
+
+# FIXME(mgoddard): This does not catch some cases we might consider
+# bootstrapped:
+# * the keystone_fernet container is created but not running
+# * the keystone_fernet volume exists but no container
+# Probably what we care about is the existence of Fernet key 0.
+- name: Group nodes where keystone_fernet is running
+  group_by:
+    key: keystone_fernet_{{ container_facts['keystone_fernet'].State | default('bootstrap') }}
+  changed_when: false
+
+# NOTE(mgoddard): If we bootstrap Fernet keys on an existing cluster, this
+# would overwrite existing keys, and invalidate tokens created from them.
+- name: Fail if any hosts need bootstrapping and not all hosts targeted
+  fail:
+    msg: >
+      Some hosts ({{ groups['keystone_fernet_bootstrap'] | join(', ') }}) need
+      Fernet key bootstrapping, but not all Keystone hosts are in the target
+      list. Stopping as it may be unsafe to proceed. Please run without --limit
+      or --serial to bootstrap these hosts.
+  when:
+    - groups['keystone_fernet_running'] is not defined
+    - groups['keystone'] | difference(ansible_play_batch) | list | length > 0
+
+- name: Running Keystone bootstrap container
+  vars:
+    keystone: "{{ keystone_services.keystone }}"
+  become: true
+  kolla_docker:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: False
+    environment:
+      KOLLA_BOOTSTRAP:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ keystone.image }}"
+    labels:
+      BOOTSTRAP:
+    name: "bootstrap_keystone"
+    restart_policy: no
+    volumes: "{{ keystone.volumes | reject('equalto', '') | list }}"
+  run_once: True
+
+- name: Running Keystone fernet bootstrap container
+  vars:
+    keystone_fernet: "{{ keystone_services['keystone-fernet'] }}"
+  become: true
+  kolla_docker:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: False
+    environment:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ keystone_fernet.image }}"
+    labels:
+      BOOTSTRAP:
+    command: >
+      bash -c 'sudo -E kolla_set_configs &&
+      keystone-manage --config-file /etc/keystone/keystone.conf
+      fernet_setup --keystone-user {{ keystone_username }} --keystone-group {{ keystone_groupname }}'
+    name: "bootstrap_keystone_fernet"
+    restart_policy: no
+    volumes: "{{ keystone_fernet.volumes | reject('equalto', '') | list }}"
+  run_once: True
+  delegate_to: "{{ groups['keystone'][0] }}"
+  when:
+    - groups['keystone_fernet_running'] is not defined

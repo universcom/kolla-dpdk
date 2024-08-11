@@ -1,0 +1,23 @@
+---
+# Discover compute hosts for a cell.
+
+- block:
+    - import_tasks: get_cell_settings.yml
+
+    - name: Fail if cell settings not found
+      fail:
+        msg: >-
+          Unable to find settings for {{ nova_cell_name or 'the default cell' }}.
+      when: not nova_cell_settings
+
+    # TODO(yoctozepto): no need to do --by-service if ironic not used
+    - name: Discover nova hosts
+      become: true
+      command: >
+        {{ kolla_container_engine }} exec nova_conductor nova-manage cell_v2 discover_hosts --by-service --cell_uuid {{ nova_cell_settings.cell_uuid }}
+      changed_when: False
+
+  # Delegate to a cell conductor.
+  delegate_to: "{{ groups[nova_cell_conductor_group][0] }}"
+  # Fail all hosts if any of these once-per-cell tasks fail.
+  any_errors_fatal: true

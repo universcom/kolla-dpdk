@@ -1,0 +1,348 @@
+---
+designate_services:
+  designate-api:
+    container_name: designate_api
+    group: designate-api
+    enabled: true
+    image: "{{ designate_api_image_full }}"
+    volumes: "{{ designate_api_default_volumes + designate_api_extra_volumes }}"
+    dimensions: "{{ designate_api_dimensions }}"
+    healthcheck: "{{ designate_api_healthcheck }}"
+    haproxy:
+      designate_api:
+        enabled: "{{ enable_designate }}"
+        mode: "http"
+        external: false
+        port: "{{ designate_api_port }}"
+        listen_port: "{{ designate_api_listen_port }}"
+      designate_api_external:
+        enabled: "{{ enable_designate }}"
+        mode: "http"
+        external: true
+        port: "{{ designate_api_port }}"
+        listen_port: "{{ designate_api_listen_port }}"
+  designate-backend-bind9:
+    container_name: designate_backend_bind9
+    group: designate-backend-bind9
+    enabled: "{{ designate_backend == 'bind9' }}"
+    image: "{{ designate_backend_bind9_image_full }}"
+    volumes: "{{ designate_backend_bind9_default_volumes + designate_backend_bind9_extra_volumes }}"
+    dimensions: "{{ designate_backend_bind9_dimensions }}"
+    healthcheck: "{{ designate_backend_bind9_healthcheck }}"
+  designate-central:
+    container_name: designate_central
+    group: designate-central
+    enabled: true
+    image: "{{ designate_central_image_full }}"
+    volumes: "{{ designate_central_default_volumes + designate_central_extra_volumes }}"
+    dimensions: "{{ designate_central_dimensions }}"
+    healthcheck: "{{ designate_central_healthcheck }}"
+  designate-mdns:
+    container_name: designate_mdns
+    group: designate-mdns
+    enabled: true
+    image: "{{ designate_mdns_image_full }}"
+    volumes: "{{ designate_mdns_default_volumes + designate_mdns_extra_volumes }}"
+    dimensions: "{{ designate_mdns_dimensions }}"
+    healthcheck: "{{ designate_mdns_healthcheck }}"
+  designate-producer:
+    container_name: designate_producer
+    group: designate-producer
+    enabled: true
+    image: "{{ designate_producer_image_full }}"
+    volumes: "{{ designate_producer_default_volumes + designate_producer_extra_volumes }}"
+    dimensions: "{{ designate_producer_dimensions }}"
+    healthcheck: "{{ designate_producer_healthcheck }}"
+  designate-worker:
+    container_name: designate_worker
+    group: designate-worker
+    enabled: true
+    image: "{{ designate_worker_image_full }}"
+    volumes: "{{ designate_worker_default_volumes + designate_worker_extra_volumes }}"
+    dimensions: "{{ designate_worker_dimensions }}"
+    healthcheck: "{{ designate_worker_healthcheck }}"
+  designate-sink:
+    container_name: designate_sink
+    group: designate-sink
+    enabled: "{{ designate_enable_notifications_sink | bool }}"
+    image: "{{ designate_sink_image_full }}"
+    volumes: "{{ designate_sink_default_volumes + designate_sink_extra_volumes }}"
+    dimensions: "{{ designate_sink_dimensions }}"
+    healthcheck: "{{ designate_sink_healthcheck }}"
+
+
+####################
+# Database
+####################
+designate_database_name: "designate"
+designate_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}designate{% endif %}"
+designate_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+designate_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ designate_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+designate_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+designate_database_shard:
+  users:
+    - user: "{{ designate_database_user }}"
+      password: "{{ designate_database_password }}"
+  rules:
+    - schema: "{{ designate_database_name }}"
+      shard_id: "{{ designate_database_shard_id }}"
+
+
+####################
+# Docker
+####################
+designate_tag: "{{ openstack_tag }}"
+
+designate_central_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-central"
+designate_central_tag: "{{ designate_tag }}"
+designate_central_image_full: "{{ designate_central_image }}:{{ designate_central_tag }}"
+
+designate_producer_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-producer"
+designate_producer_tag: "{{ designate_tag }}"
+designate_producer_image_full: "{{ designate_producer_image }}:{{ designate_producer_tag }}"
+
+designate_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-api"
+designate_api_tag: "{{ designate_tag }}"
+designate_api_image_full: "{{ designate_api_image }}:{{ designate_api_tag }}"
+
+designate_backend_bind9_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-backend-bind9"
+designate_backend_bind9_tag: "{{ designate_tag }}"
+designate_backend_bind9_image_full: "{{ designate_backend_bind9_image }}:{{ designate_backend_bind9_tag }}"
+
+designate_mdns_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-mdns"
+designate_mdns_tag: "{{ designate_tag }}"
+designate_mdns_image_full: "{{ designate_mdns_image }}:{{ designate_mdns_tag }}"
+
+designate_sink_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-sink"
+designate_sink_tag: "{{ designate_tag }}"
+designate_sink_image_full: "{{ designate_sink_image }}:{{ designate_sink_tag }}"
+
+designate_worker_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/designate-worker"
+designate_worker_tag: "{{ designate_tag }}"
+designate_worker_image_full: "{{ designate_worker_image }}:{{ designate_worker_tag }}"
+
+designate_api_dimensions: "{{ default_container_dimensions }}"
+designate_backend_bind9_dimensions: "{{ default_container_dimensions }}"
+designate_central_dimensions: "{{ default_container_dimensions }}"
+designate_mdns_dimensions: "{{ default_container_dimensions }}"
+designate_producer_dimensions: "{{ default_container_dimensions }}"
+designate_worker_dimensions: "{{ default_container_dimensions }}"
+designate_sink_dimensions: "{{ default_container_dimensions }}"
+
+designate_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_api_healthcheck_test: ["CMD-SHELL", "healthcheck_curl http://{{ api_interface_address | put_address_in_context('url') }}:{{ designate_api_listen_port }}"]
+designate_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_api_healthcheck:
+  interval: "{{ designate_api_healthcheck_interval }}"
+  retries: "{{ designate_api_healthcheck_retries }}"
+  start_period: "{{ designate_api_healthcheck_start_period }}"
+  test: "{% if designate_api_enable_healthchecks | bool %}{{ designate_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_api_healthcheck_timeout }}"
+
+designate_backend_bind9_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_backend_bind9_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_backend_bind9_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_backend_bind9_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_backend_bind9_healthcheck_test: ["CMD-SHELL", "healthcheck_listen named {{ designate_bind_port }}"]
+designate_backend_bind9_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_backend_bind9_healthcheck:
+  interval: "{{ designate_backend_bind9_healthcheck_interval }}"
+  retries: "{{ designate_backend_bind9_healthcheck_retries }}"
+  start_period: "{{ designate_backend_bind9_healthcheck_start_period }}"
+  test: "{% if designate_backend_bind9_enable_healthchecks | bool %}{{ designate_backend_bind9_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_backend_bind9_healthcheck_timeout }}"
+
+designate_central_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_central_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_central_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_central_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_central_healthcheck_test: ["CMD-SHELL", "healthcheck_port designate-central {{ om_rpc_port }}"]
+designate_central_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_central_healthcheck:
+  interval: "{{ designate_central_healthcheck_interval }}"
+  retries: "{{ designate_central_healthcheck_retries }}"
+  start_period: "{{ designate_central_healthcheck_start_period }}"
+  test: "{% if designate_central_enable_healthchecks | bool %}{{ designate_central_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_central_healthcheck_timeout }}"
+
+designate_mdns_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_mdns_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_mdns_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_mdns_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_mdns_healthcheck_test: ["CMD-SHELL", "healthcheck_port designate-mdns {{ om_rpc_port }}"]
+designate_mdns_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_mdns_healthcheck:
+  interval: "{{ designate_mdns_healthcheck_interval }}"
+  retries: "{{ designate_mdns_healthcheck_retries }}"
+  start_period: "{{ designate_mdns_healthcheck_start_period }}"
+  test: "{% if designate_mdns_enable_healthchecks | bool %}{{ designate_mdns_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_mdns_healthcheck_timeout }}"
+
+designate_producer_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_producer_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_producer_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_producer_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_producer_healthcheck_test: ["CMD-SHELL", "healthcheck_port designate-producer {{ om_rpc_port }}"]
+designate_producer_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_producer_healthcheck:
+  interval: "{{ designate_producer_healthcheck_interval }}"
+  retries: "{{ designate_producer_healthcheck_retries }}"
+  start_period: "{{ designate_producer_healthcheck_start_period }}"
+  test: "{% if designate_producer_enable_healthchecks | bool %}{{ designate_producer_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_producer_healthcheck_timeout }}"
+
+designate_worker_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_worker_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_worker_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_worker_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_worker_healthcheck_test: ["CMD-SHELL", "healthcheck_port designate-worker {{ om_rpc_port }}"]
+designate_worker_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_worker_healthcheck:
+  interval: "{{ designate_worker_healthcheck_interval }}"
+  retries: "{{ designate_worker_healthcheck_retries }}"
+  start_period: "{{ designate_worker_healthcheck_start_period }}"
+  test: "{% if designate_worker_enable_healthchecks | bool %}{{ designate_worker_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_worker_healthcheck_timeout }}"
+
+designate_sink_enable_healthchecks: "{{ enable_container_healthchecks }}"
+designate_sink_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+designate_sink_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+designate_sink_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+designate_sink_healthcheck_test: ["CMD-SHELL", "healthcheck_port designate-sink {{ om_rpc_port }}"]
+designate_sink_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+designate_sink_healthcheck:
+  interval: "{{ designate_sink_healthcheck_interval }}"
+  retries: "{{ designate_sink_healthcheck_retries }}"
+  start_period: "{{ designate_sink_healthcheck_start_period }}"
+  test: "{% if designate_sink_enable_healthchecks | bool %}{{ designate_sink_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ designate_sink_healthcheck_timeout }}"
+
+designate_api_default_volumes:
+  - "{{ node_config_directory }}/designate-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+designate_backend_bind9_default_volumes:
+  - "{{ node_config_directory }}/designate-backend-bind9/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "designate_backend_bind9:/var/lib/named/"
+designate_central_default_volumes:
+  - "{{ node_config_directory }}/designate-central/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+designate_mdns_default_volumes:
+  - "{{ node_config_directory }}/designate-mdns/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+designate_producer_default_volumes:
+  - "{{ node_config_directory }}/designate-producer/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+designate_worker_default_volumes:
+  - "{{ node_config_directory }}/designate-worker/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+designate_sink_default_volumes:
+  - "{{ node_config_directory }}/designate-sink/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/designate/designate:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/designate' if designate_dev_mode | bool else '' }}"
+
+designate_extra_volumes: "{{ default_extra_volumes }}"
+designate_api_extra_volumes: "{{ designate_extra_volumes }}"
+designate_backend_bind9_extra_volumes: "{{ designate_extra_volumes }}"
+designate_central_extra_volumes: "{{ designate_extra_volumes }}"
+designate_mdns_extra_volumes: "{{ designate_extra_volumes }}"
+designate_producer_extra_volumes: "{{ designate_extra_volumes }}"
+designate_worker_extra_volumes: "{{ designate_extra_volumes }}"
+designate_sink_extra_volumes: "{{ designate_extra_volumes }}"
+
+####################
+# OpenStack
+####################
+designate_logging_debug: "{{ openstack_logging_debug }}"
+
+openstack_designate_auth: "{{ openstack_auth }}"
+
+designate_api_workers: "{{ openstack_service_workers }}"
+designate_worker_workers: "{{ openstack_service_workers }}"
+designate_producer_workers: "{{ openstack_service_workers }}"
+designate_central_workers: "{{ openstack_service_workers }}"
+designate_sink_workers: "{{ openstack_service_workers }}"
+designate_mdns_workers: "{{ openstack_service_workers }}"
+designate_backend_bind9_workers: "{{ [ansible_facts.processor_vcpus, 32] | min }}"
+
+####################
+# Kolla
+####################
+designate_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+designate_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+designate_dev_mode: "{{ kolla_dev_mode }}"
+designate_source_version: "{{ kolla_source_version }}"
+
+####################
+## Designate
+#####################
+designate_dnssec_validation: "yes"
+designate_recursion: "no"
+## Example for designate_forwarders_addresses: "10.199.200.1; 10.199.100.1"
+designate_forwarders_addresses: ""
+designate_backend_bind9_cmdline_extras: "-U {{ designate_backend_bind9_workers }} -g"
+
+####################
+# Infoblox
+####################
+designate_backend_infoblox_nameservers: ""
+designate_infoblox_host: ""
+designate_infoblox_wapi_url: ""
+designate_infoblox_ssl_verify: "true"
+designate_infoblox_auth_username: ""
+designate_infoblox_auth_password: ""
+designate_infoblox_multi_tenant: "false"
+designate_infoblox_ns_group: ""
+
+
+####################
+# Notifications
+####################
+designate_notification_topics:
+  - name: "{{ designate_notifications_topic_name }}"
+    enabled: "{{ designate_enable_notifications_sink | bool }}"
+
+designate_enabled_notification_topics: "{{ designate_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# Keystone
+####################
+designate_ks_services:
+  - name: "designate"
+    type: "dns"
+    description: "Designate DNS Service"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ designate_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ designate_public_endpoint }}'}
+
+designate_ks_users:
+  - project: "service"
+    user: "{{ designate_keystone_user }}"
+    password: "{{ designate_keystone_password }}"
+    role: "admin"

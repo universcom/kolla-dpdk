@@ -1,0 +1,7 @@
+{# Cron uses a PATH of /usr/bin:/bin by default, which does not include the #}
+{# virtualenv in source images. #}
+PATH=/var/lib/kolla/venv/bin:/usr/bin:/bin
+
+{% for cron_job in cron_jobs %}
+{{ cron_job['min'] }} {{ cron_job['hour'] }} * * {{ cron_job['day'] }} /usr/bin/fernet-rotate.sh
+{% endfor %}

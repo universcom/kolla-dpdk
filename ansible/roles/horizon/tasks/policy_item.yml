@@ -1,0 +1,25 @@
+---
+
+- name: Update policy file name
+  set_fact:
+    supported_policy_files: "{{ supported_policy_format_list | map('regex_replace', '(.+)', project_name + '_\\1') | list }}"
+
+- name: Check if policies shall be overwritten
+  stat:
+    path: "{{ fullpath }}"
+  delegate_to: localhost
+  run_once: True
+  register: overwritten_files
+  with_first_found:
+    - files: "{{ supported_policy_files }}"
+      paths:
+        - "{{ node_custom_config }}/horizon/"
+      skip: true
+  loop_control:
+    loop_var: fullpath
+
+- name: Update custom policy file name
+  set_fact:
+    custom_policy: "{{ custom_policy + [overwritten_files.results.0.stat.path] }}"
+  when:
+    - overwritten_files.results

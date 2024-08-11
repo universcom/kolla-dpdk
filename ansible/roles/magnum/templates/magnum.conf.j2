@@ -1,0 +1,150 @@
+[DEFAULT]
+debug = {{ magnum_logging_debug }}
+state_path = /var/lib/magnum
+log_dir = /var/log/kolla/magnum
+
+host = {{ api_interface_address }}
+
+transport_url = {{ rpc_transport_url }}
+
+{% if service_name == 'magnum-api' %}
+[api]
+port = {{ magnum_api_port }}
+host = {{ api_interface_address }}
+workers = {{ magnum_api_workers }}
+{% endif %}
+
+{% if service_name == 'magnum-conductor' %}
+[conductor]
+workers = {{ magnum_conductor_workers }}
+{% endif %}
+
+[database]
+connection = mysql+pymysql://{{ magnum_database_user }}:{{ magnum_database_password }}@{{ magnum_database_address }}/{{ magnum_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+max_retries = -1
+
+{% if enable_cinder | bool %}
+[cinder]
+default_docker_volume_type = {{ default_docker_volume_type }}
+{% endif %}
+
+[magnum_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = publicURL
+
+[heat_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[octavia_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[cinder_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[barbican_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[glance_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[neutron_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[nova_client]
+region_name = {{ openstack_region_name }}
+endpoint_type = internalURL
+ca_file = {{ openstack_cacert }}
+
+[keystone_auth]
+auth_url = {{ keystone_internal_url }}
+user_domain_name = {{ default_user_domain_name }}
+project_domain_name = {{ default_project_domain_name }}
+project_name = service
+password = {{ magnum_keystone_password }}
+username = {{ magnum_keystone_user }}
+auth_type = password
+cafile = {{ openstack_cacert }}
+
+[keystone_authtoken]
+service_type = container-infra
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_name = {{ default_project_domain_name }}
+user_domain_name = {{ default_user_domain_name }}
+project_name = service
+username = {{ magnum_keystone_user }}
+password = {{ magnum_keystone_password }}
+cafile = {{ openstack_cacert }}
+region_name = {{ openstack_region_name }}
+
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+[trust]
+trustee_domain_admin_password = {{ magnum_keystone_password }}
+trustee_domain_admin_name = {{ magnum_trustee_domain_admin }}
+trustee_domain_name = {{ magnum_trustee_domain }}
+trustee_keystone_region_name = {{ openstack_region_name }}
+trustee_keystone_interface = public
+cluster_user_trust = {{ enable_cluster_user_trust }}
+
+[oslo_concurrency]
+lock_path = /var/lib/magnum/tmp
+
+[oslo_middleware]
+enable_proxy_headers_parsing = True
+
+[certificates]
+{% if enable_barbican | bool %}
+cert_manager_type = barbican
+{% else %}
+cert_manager_type = x509keypair
+{% endif %}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+{% if magnum_enabled_notification_topics %}
+driver = messaging
+topics = {{ magnum_enabled_notification_topics | map(attribute='name') | join(',') }}
+{% else %}
+driver = noop
+{% endif %}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+{% if magnum_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ magnum_policy_file }}
+{% endif %}
+
+{% if enable_osprofiler | bool %}
+[profiler]
+enabled = true
+trace_sqlalchemy = true
+hmac_keys = {{ osprofiler_secret }}
+connection_string = {{ osprofiler_backend_connection_string }}
+{% endif %}

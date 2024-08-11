@@ -1,0 +1,12 @@
+<source>
+  @type syslog
+  port {{ fluentd_syslog_port }}
+  bind {{ api_interface_address }}
+  tag syslog
+  severity_key log_level
+  source_hostname_key Hostname
+  <parse>
+    @type regexp
+    expression /^(?<Payload>.*)$/
+  </parse>
+</source>

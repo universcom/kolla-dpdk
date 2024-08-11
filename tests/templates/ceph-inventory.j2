@@ -1,0 +1,14 @@
+[storage]
+{% for host in hostvars %}
+{{ host }} ansible_host={{ hostvars[host]['ansible_host'] }}
+{% endfor %}
+
+# Ceph-Ansible hosts
+[mons:children]
+storage
+
+[mgrs:children]
+storage
+
+[osds:children]
+storage

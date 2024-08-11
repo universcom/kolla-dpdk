@@ -1,0 +1,52 @@
+---
+- name: Creating blazar database
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_db
+    module_args:
+      login_host: "{{ database_address }}"
+      login_port: "{{ database_port }}"
+      login_user: "{{ blazar_database_shard_root_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ blazar_database_name }}"
+  run_once: True
+  delegate_to: "{{ groups['blazar-api'][0] }}"
+  when:
+    - not use_preconfigured_databases | bool
+
+- name: Creating blazar database user and setting permissions
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_user
+    module_args:
+      login_host: "{{ database_address }}"
+      login_port: "{{ database_port }}"
+      login_user: "{{ blazar_database_shard_root_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ blazar_database_name }}"
+      password: "{{ blazar_database_password }}"
+      host: "%"
+      priv: "{{ blazar_database_name }}.*:ALL"
+      append_privs: "yes"
+  run_once: True
+  delegate_to: "{{ groups['blazar-api'][0] }}"
+  when:
+    - not use_preconfigured_databases | bool
+
+- name: Creating blazar host aggregate
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: os_nova_host_aggregate
+    module_args:
+      auth: "{{ openstack_auth }}"
+      cacert: "{{ openstack_cacert }}"
+      endpoint_type: "{{ openstack_interface }}"
+      region_name: "{{ openstack_region_name }}"
+      name: "{{ blazar_aggregate_pool_name }}"
+  run_once: True
+  delegate_to: "{{ groups['blazar-api'][0] }}"
+
+- import_tasks: bootstrap_service.yml

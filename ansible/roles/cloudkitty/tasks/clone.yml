@@ -1,0 +1,8 @@
+---
+- name: Cloning cloudkitty source repository for development
+  become: true
+  git:
+    repo: "{{ cloudkitty_git_repository }}"
+    dest: "{{ kolla_dev_repos_directory }}/{{ project_name }}"
+    update: "{{ cloudkitty_dev_repos_pull }}"
+    version: "{{ cloudkitty_source_version }}"

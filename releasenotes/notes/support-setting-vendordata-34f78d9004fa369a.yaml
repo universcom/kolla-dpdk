@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Adds support for configuring a Vendordata file for Nova.  This allows users
+    to pass through arbitrary data to instances.

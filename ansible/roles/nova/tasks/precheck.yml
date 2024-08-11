@@ -1,0 +1,43 @@
+---
+- import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ nova_services }}"
+    service_name: "{{ project_name }}"
+
+- name: Get container facts
+  become: true
+  kolla_container_facts:
+    container_engine: "{{ kolla_container_engine }}"
+    name:
+      - nova_api
+  check_mode: false
+  register: container_facts
+
+- name: Checking free port for Nova API
+  vars:
+    nova_api: "{{ nova_services['nova-api'] }}"
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ nova_api_listen_port }}"
+    connect_timeout: 1
+    timeout: 1
+    state: stopped
+  when:
+    - container_facts['nova_api'] is not defined
+    - inventory_hostname in groups[nova_api.group]
+    - nova_api.enabled | bool
+
+- name: Checking free port for Nova Metadata
+  vars:
+    nova_api: "{{ nova_services['nova-api'] }}"
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ nova_metadata_listen_port }}"
+    connect_timeout: 1
+    timeout: 1
+    state: stopped
+  when:
+    - container_facts['nova_api'] is not defined
+    - inventory_hostname in groups[nova_api.group]
+    - nova_api.enabled | bool

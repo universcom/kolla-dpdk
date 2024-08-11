@@ -1,0 +1,87 @@
+---
+- name: Creating shard root mysql user
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_user
+    module_args:
+      login_host: "{{ api_interface_address }}"
+      login_port: "{{ mariadb_port }}"
+      login_user: "{{ database_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ mariadb_shard_database_user }}"
+      password: "{{ database_password }}"
+      host: "%"
+      priv: "*.*:ALL,GRANT"
+  when:
+    - inventory_hostname == groups[mariadb_shard_group][0]
+
+- name: Creating mysql monitor user
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_user
+    module_args:
+      login_host: "{{ api_interface_address }}"
+      login_port: "{{ mariadb_port }}"
+      login_user: "{{ database_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ mariadb_monitor_user }}"
+      password: "{% if enable_proxysql | bool %}{{ mariadb_monitor_password }}{% endif %}"
+      host: "%"
+      priv: "*.*:USAGE"
+  when:
+    - inventory_hostname == groups[mariadb_shard_group][0]
+
+- name: Creating the Mariabackup database
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_db
+    module_args:
+      login_host: "{{ api_interface_address }}"
+      login_port: "{{ mariadb_port }}"
+      login_user: "{{ mariadb_shard_database_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ mariadb_backup_database_schema }}"
+  when:
+    - enable_mariabackup | bool
+    - inventory_hostname == mariadb_backup_host
+
+- name: Creating database backup user and setting permissions
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_user
+    module_args:
+      login_host: "{{ api_interface_address }}"
+      login_port: "{{ mariadb_port }}"
+      login_user: "{{ mariadb_shard_database_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ mariadb_backup_database_user }}"
+      password: "{{ mariadb_backup_database_password }}"
+      host: "%"
+      priv: "*.*:CREATE TABLESPACE,RELOAD,PROCESS,SUPER,LOCK TABLES,BINLOG MONITOR"
+      append_privs: True
+  when:
+    - enable_mariabackup | bool
+    - inventory_hostname == mariadb_backup_host
+
+- name: Granting permissions on Mariabackup database to backup user
+  become: true
+  kolla_toolbox:
+    container_engine: "{{ kolla_container_engine }}"
+    module_name: mysql_user
+    module_args:
+      login_host: "{{ api_interface_address }}"
+      login_port: "{{ mariadb_port }}"
+      login_user: "{{ mariadb_shard_database_user }}"
+      login_password: "{{ database_password }}"
+      name: "{{ mariadb_backup_database_user }}"
+      password: "{{ mariadb_backup_database_password }}"
+      host: "%"
+      priv: "{{ mariadb_backup_database_schema }}.*:CREATE,INSERT,SELECT"
+      append_privs: True
+  when:
+    - enable_mariabackup | bool
+    - inventory_hostname == mariadb_backup_host

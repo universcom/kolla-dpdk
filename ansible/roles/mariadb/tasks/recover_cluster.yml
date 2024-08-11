@@ -1,0 +1,230 @@
+---
+- name: Checking for mariadb cluster
+  fail:
+    msg: "MariaDB cluster was not found. Is your inventory correct?"
+  when: not mariadb_cluster_exists
+
+- name: Cleaning up temp file on localhost
+  file:
+    path: "{{ item }}"
+    state: absent
+  delegate_to: localhost
+  changed_when: false
+  check_mode: no
+  run_once: true
+  with_fileglob: "/tmp/kolla_mariadb_recover_inventory_name_*"
+
+- block:
+    - name: Stop MariaDB containers
+      become: true
+      kolla_docker:
+        name: "{{ mariadb_service.container_name }}"
+        action: "stop_container"
+        ignore_missing: true
+
+    # Run wsrep recovery with detach=false to block until completion. Use a
+    # different container name to avoid the mariadb container being removed.
+    - name: Run MariaDB wsrep recovery
+      become: true
+      kolla_docker:
+        action: "start_container"
+        common_options: "{{ docker_common_options }}"
+        detach: false
+        environment:
+          KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+          BOOTSTRAP_ARGS: "--wsrep-recover"
+        image: "{{ mariadb_service.image }}"
+        labels:
+          BOOTSTRAP:
+        name: mariadb_wsrep_recovery
+        restart_policy: no
+        volumes: "{{ mariadb_service.volumes }}"
+
+    - name: Copying MariaDB log file to /tmp
+      become: true
+      command: "cp {{ docker_runtime_directory or '/var/lib/docker' }}/volumes/kolla_logs/_data/mariadb/mariadb.log /tmp/mariadb_tmp.log"
+
+    # Look for sequence number in logs. Format is:
+    # WSREP: Recovered position: <UUID>:<seqno>.
+    - name: Get MariaDB wsrep recovery seqno
+      become: true
+      shell: awk -F" " '/Recovered position/{seqno=$NF} END{split(seqno, a, ":"); print a[2]}' /tmp/mariadb_tmp.log
+      register: wsrep_recovery_seqno
+
+    - name: Removing MariaDB log file from /tmp
+      become: true
+      file:
+        path: /tmp/mariadb_tmp.log
+        state: absent
+      changed_when: false
+      check_mode: no
+
+    - name: Registering MariaDB seqno variable
+      set_fact:
+        seqno: "{{ wsrep_recovery_seqno.stdout_lines[0] }}"
+      changed_when: false
+
+    - name: Comparing seqno value on all mariadb hosts
+      shell:
+        cmd: |
+          if [[ ! -z {{ hostvars[inventory_hostname]['seqno'] }} && ! -z {{ hostvars[item]['seqno'] }} &&
+          {{ hostvars[inventory_hostname]['seqno'] }} =~ ^-?[0-9]+$ && {{ hostvars[item]['seqno'] }} =~ ^-?[0-9]+$ &&
+          {{ hostvars[inventory_hostname]['seqno'] }} -lt {{ hostvars[item]['seqno'] }} ]]; then echo {{ hostvars[item]['seqno'] }}; fi
+      with_items: "{{ groups[mariadb_shard_group] }}"
+      register: seqno_compare
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Writing hostname of host with the largest seqno to temp file
+      template:
+        src: "hostname.j2"
+        dest: "{{ mariadb_recover_tmp_file_path }}"
+        mode: 0644
+      delegate_to: localhost
+      changed_when: false
+      when: seqno_compare.results | map(attribute='stdout') | join('') == ""
+
+    - name: Registering mariadb_recover_inventory_name from temp file
+      set_fact:
+        mariadb_recover_inventory_name: "{{ lookup('file', mariadb_recover_tmp_file_path) }}"
+  when:
+    - mariadb_recover_inventory_name is not defined
+
+- name: Store bootstrap and master hostnames into facts
+  set_fact:
+    bootstrap_host: "{{ mariadb_recover_inventory_name }}"
+
+- name: Set grastate.dat file from MariaDB container in bootstrap host
+  become: true
+  lineinfile:
+    create: yes
+    dest: "{{ docker_runtime_directory or '/var/lib/docker' }}/volumes/mariadb/_data/grastate.dat"
+    regexp: 'safe_to_bootstrap:(.*)$'
+    line: 'safe_to_bootstrap: 1'
+    state: present
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Starting first MariaDB container
+  become: true
+  kolla_docker:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    environment:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+      BOOTSTRAP_ARGS: "--wsrep-new-cluster"
+    image: "{{ mariadb_service.image }}"
+    labels:
+      BOOTSTRAP:
+    name: "{{ mariadb_service.container_name }}"
+    restart_policy: no
+    volumes: "{{ mariadb_service.volumes }}"
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Wait for first MariaDB container
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ mariadb_port }}"
+    connect_timeout: 1
+    timeout: 60
+    search_regex: "MariaDB"
+  register: check_mariadb_port
+  until: check_mariadb_port is success
+  retries: 10
+  delay: 6
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Set first MariaDB container as primary
+  become: true
+  shell: "{{ kolla_container_engine }} exec {{ mariadb_service.container_name }} mysql -uroot -p{{ database_password }} -e \"SET GLOBAL wsrep_provider_options='pc.bootstrap=yes';\""
+  no_log: True
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Wait for MariaDB to become operational
+  become: true
+  command: >-
+    {{ kolla_container_engine }} exec {{ mariadb_service.container_name }}
+    mysql -uroot -p{{ database_password }}
+    --silent --skip-column-names
+    -e 'SHOW STATUS LIKE "wsrep_evs_state"'
+  changed_when: false
+  register: result
+  until: '"OPERATIONAL" in result.stdout'
+  retries: 10
+  delay: 6
+  no_log: true
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Restart slave MariaDB container(s)
+  become: true
+  kolla_docker:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    name: "{{ item.value.container_name }}"
+    image: "{{ item.value.image }}"
+    volumes: "{{ item.value.volumes }}"
+    dimensions: "{{ item.value.dimensions }}"
+    environment: "{{ item.value.environment | default({}) }}"
+    healthcheck: "{{ item.value.healthcheck | default(omit) }}"
+  with_dict: "{{ mariadb_services }}"
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host != inventory_hostname
+
+- name: Wait for slave MariaDB
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ mariadb_port }}"
+    connect_timeout: 1
+    timeout: 60
+    search_regex: "MariaDB"
+  register: check_mariadb_port
+  until: check_mariadb_port is success
+  retries: 10
+  delay: 6
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host != inventory_hostname
+
+- name: Restart master MariaDB container(s)
+  become: true
+  kolla_docker:
+    action: "recreate_or_restart_container"
+    common_options: "{{ docker_common_options }}"
+    name: "{{ item.value.container_name }}"
+    image: "{{ item.value.image }}"
+    volumes: "{{ item.value.volumes }}"
+    dimensions: "{{ item.value.dimensions }}"
+    environment: "{{ item.value.environment | default({}) }}"
+    healthcheck: "{{ item.value.healthcheck | default(omit) }}"
+  with_dict: "{{ mariadb_services }}"
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- name: Wait for master mariadb
+  wait_for:
+    host: "{{ api_interface_address }}"
+    port: "{{ mariadb_port }}"
+    connect_timeout: 1
+    timeout: 60
+    search_regex: "MariaDB"
+  register: check_mariadb_port
+  until: check_mariadb_port is success
+  retries: 10
+  delay: 6
+  when:
+    - bootstrap_host is defined
+    - bootstrap_host == inventory_hostname
+
+- import_tasks: check.yml

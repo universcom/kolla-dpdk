@@ -1,0 +1,15 @@
+---
+- import_role:
+    name: service-precheck
+  vars:
+    service_precheck_services: "{{ ceilometer_services }}"
+    service_name: "{{ project_name }}"
+
+- name: Checking gnocchi backend for ceilometer
+  fail:
+    msg: "gnocchi is required but not enabled"
+  run_once: True
+  changed_when: false
+  when:
+    - enable_ceilometer | bool
+    - not (enable_gnocchi | bool or enable_ceilometer_prometheus_pushgateway | bool)

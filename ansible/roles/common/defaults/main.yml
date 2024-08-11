@@ -1,0 +1,201 @@
+---
+common_services:
+  fluentd:
+    container_name: fluentd
+    group: fluentd
+    enabled: "{{ enable_fluentd | bool }}"
+    image: "{{ fluentd_image_full }}"
+    environment:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    volumes: "{{ fluentd_default_volumes + fluentd_extra_volumes }}"
+    dimensions: "{{ fluentd_dimensions }}"
+  kolla-toolbox:
+    container_name: kolla_toolbox
+    group: kolla-toolbox
+    enabled: True
+    image: "{{ kolla_toolbox_image_full }}"
+    environment:
+      ANSIBLE_NOCOLOR: "1"
+      ANSIBLE_LIBRARY: "/usr/share/ansible"
+    privileged: True
+    volumes: "{{ kolla_toolbox_default_volumes + kolla_toolbox_extra_volumes }}"
+    dimensions: "{{ kolla_toolbox_dimensions }}"
+  cron:
+    container_name: cron
+    group: cron
+    enabled: True
+    image: "{{ cron_image_full }}"
+    environment:
+      KOLLA_LOGROTATE_SCHEDULE: "{{ cron_logrotate_schedule }}"
+    volumes: "{{ cron_default_volumes + cron_extra_volumes }}"
+    dimensions: "{{ cron_dimensions }}"
+
+#######################
+# TLS and authenication
+#######################
+
+fluentd_elasticsearch_path: ""
+fluentd_elasticsearch_scheme: "{{ internal_protocol }}"
+fluentd_elasticsearch_user: ""
+fluentd_elasticsearch_password: ""
+fluentd_elasticsearch_ssl_version: "TLSv1_2"
+fluentd_elasticsearch_ssl_verify: "true"
+fluentd_elasticsearch_cacert: "{{ openstack_cacert }}"
+fluentd_elasticsearch_request_timeout: "60s"
+
+fluentd_opensearch_path: ""
+fluentd_opensearch_scheme: "{{ internal_protocol }}"
+fluentd_opensearch_user: ""
+fluentd_opensearch_password: ""
+fluentd_opensearch_ssl_version: "TLSv1_2"
+fluentd_opensearch_ssl_verify: "true"
+fluentd_opensearch_cacert: "{{ openstack_cacert }}"
+fluentd_opensearch_request_timeout: "60s"
+
+####################
+# Docker
+####################
+common_tag: "{{ openstack_tag }}"
+
+cron_dimensions: "{{ default_container_dimensions }}"
+kolla_toolbox_dimensions: "{{ default_container_dimensions }}"
+fluentd_dimensions: "{{ default_container_dimensions }}"
+
+kolla_toolbox_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/kolla-toolbox"
+kolla_toolbox_tag: "{{ common_tag }}"
+kolla_toolbox_image_full: "{{ kolla_toolbox_image }}:{{ kolla_toolbox_tag }}"
+
+cron_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/cron"
+cron_tag: "{{ common_tag }}"
+cron_image_full: "{{ cron_image }}:{{ cron_tag }}"
+
+fluentd_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/fluentd"
+fluentd_tag: "{{ common_tag }}"
+fluentd_image_full: "{{ fluentd_image }}:{{ fluentd_tag }}"
+
+syslog_swift_facility: "local0"
+syslog_haproxy_facility: "local1"
+syslog_glance_tls_proxy_facility: "local2"
+syslog_neutron_tls_proxy_facility: "local4"
+
+syslog_facilities:
+  - name: "swift"
+    enabled: "{{ enable_swift | bool and (inventory_hostname in groups['swift-proxy-server'] or inventory_hostname in groups['swift-account-server'] or inventory_hostname in groups['swift-container-server'] or inventory_hostname in groups['swift-object-server']) }}"
+    facility: "{{ syslog_swift_facility }}"
+    logdir: "swift"
+    logfile: "swift_latest"
+    output_tag: true
+    output_time: true
+  - name: "haproxy"
+    enabled: "{{ enable_haproxy | bool and inventory_hostname in groups['loadbalancer'] }}"
+    facility: "{{ syslog_haproxy_facility }}"
+    logdir: "haproxy"
+    logfile: "haproxy_latest"
+  - name: "glance_tls_proxy"
+    enabled: "{{ glance_enable_tls_backend | bool and inventory_hostname in groups['glance-api'] }}"
+    facility: "{{ syslog_glance_tls_proxy_facility }}"
+    logdir: "glance-tls-proxy"
+    logfile: "glance-tls-proxy"
+  - name: "neutron_tls_proxy"
+    enabled: "{{ neutron_enable_tls_backend | bool and inventory_hostname in groups['neutron-server'] }}"
+    facility: "{{ syslog_neutron_tls_proxy_facility }}"
+    logdir: "neutron-tls-proxy"
+    logfile: "neutron-tls-proxy"
+
+kolla_toolbox_default_volumes:
+  - "{{ node_config_directory }}/kolla-toolbox/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "/dev/:/dev/"
+  - "/run/:/run/:shared"
+  - "kolla_logs:/var/log/kolla/"
+cron_default_volumes:
+  - "{{ node_config_directory }}/cron/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+fluentd_default_volumes:
+  - "{{ node_config_directory }}/fluentd/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "fluentd_data:/var/lib/fluentd/data/"
+kolla_toolbox_extra_volumes: "{{ default_extra_volumes }}"
+cron_extra_volumes: "{{ default_extra_volumes }}"
+fluentd_extra_volumes: "{{ default_extra_volumes }}"
+
+cron_logrotate_log_maxsize: "100M"
+cron_logrotate_log_minsize: "30M"
+cron_logrotate_rotation_interval: "weekly"
+cron_logrotate_rotation_count: 6
+cron_logrotate_schedule: "daily"
+
+####################
+# Fluentd
+####################
+
+fluentd_input_openstack_services:
+  - name: aodh
+    enabled: "{{ enable_aodh | bool }}"
+  - name: barbican
+    enabled: "{{ enable_barbican | bool }}"
+  - name: blazar
+    enabled: "{{ enable_blazar | bool }}"
+  - name: ceilometer
+    enabled: "{{ enable_ceilometer | bool }}"
+  - name: cinder
+    enabled: "{{ enable_cinder | bool }}"
+  - name: cloudkitty
+    enabled: "{{ enable_cloudkitty | bool }}"
+  - name: cyborg
+    enabled: "{{ enable_cyborg | bool }}"
+  - name: designate
+    enabled: "{{ enable_designate | bool }}"
+  - name: freezer
+    enabled: "{{ enable_freezer | bool }}"
+  - name: glance
+    enabled: "{{ enable_glance | bool }}"
+  - name: gnocchi
+    enabled: "{{ enable_gnocchi | bool }}"
+  - name: heat
+    enabled: "{{ enable_heat | bool }}"
+  - name: horizon
+    enabled: "{{ enable_horizon | bool }}"
+  - name: ironic
+    enabled: "{{ enable_ironic | bool }}"
+  - name: ironic-inspector
+    enabled: "{{ enable_ironic | bool }}"
+  - name: keystone
+    enabled: "{{ enable_keystone | bool }}"
+  - name: kuryr
+    enabled: "{{ enable_kuryr | bool }}"
+  - name: magnum
+    enabled: "{{ enable_magnum | bool }}"
+  - name: manila
+    enabled: "{{ enable_manila | bool }}"
+  - name: masakari
+    enabled: "{{ enable_masakari | bool }}"
+  - name: mistral
+    enabled: "{{ enable_mistral | bool }}"
+  - name: murano
+    enabled: "{{ enable_murano | bool }}"
+  - name: neutron
+    enabled: "{{ enable_neutron | bool }}"
+  - name: nova
+    enabled: "{{ enable_nova | bool }}"
+  - name: octavia
+    enabled: "{{ enable_octavia | bool }}"
+  - name: sahara
+    enabled: "{{ enable_sahara | bool }}"
+  - name: senlin
+    enabled: "{{ enable_senlin | bool }}"
+  - name: solum
+    enabled: "{{ enable_solum | bool }}"
+  - name: tacker
+    enabled: "{{ enable_tacker | bool }}"
+  - name: trove
+    enabled: "{{ enable_trove | bool }}"
+  - name: watcher
+    enabled: "{{ enable_watcher | bool }}"
+
+fluentd_enabled_input_openstack_services: "{{ fluentd_input_openstack_services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list }}"

@@ -1,0 +1,39 @@
+---
+telegraf_services:
+  telegraf:
+    container_name: "telegraf"
+    image: "{{ telegraf_image_full }}"
+    enabled: true
+    pid_mode: "host"
+    group: "telegraf"
+    volumes: "{{ telegraf_default_volumes + telegraf_extra_volumes }}"
+    dimensions: "{{ telegraf_dimensions }}"
+
+####################
+# Docker
+####################
+telegraf_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/telegraf"
+telegraf_tag: "{{ openstack_tag }}"
+telegraf_image_full: "{{ telegraf_image }}:{{ telegraf_tag }}"
+telegraf_dimensions: "{{ default_container_dimensions }}"
+
+telegraf_default_volumes:
+  - "{{ node_config_directory }}/telegraf/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "/sys:/rootfs/sys:ro"
+  - "/proc:/rootfs/proc:ro"
+  - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+telegraf_extra_volumes: "{{ default_extra_volumes }}"
+
+####################
+# Protocols
+####################
+haproxy_proto: "http"
+influxdb_proto: "http"
+rabbitmq_proto: "http"
+mariadb_proto: "tcp"
+opensearch_proto: "http"
+outward_rabbitmq_proto: "http"

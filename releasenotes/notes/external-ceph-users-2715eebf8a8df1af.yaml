@@ -1,0 +1,12 @@
+---
+features:
+  - |
+    Introduce External Ceph user IDs as variables to allow non-standard Ceph
+    authentication IDs in OpenStack service configuration without the need to
+    override configuration files.
+upgrade:
+  - |
+    The ``rbd`` section of ``nova.conf`` for ``nova-compute`` is now generated
+    when ``nova_backend`` is set to ``"rbd"``. Previously it was only generated
+    when both ``enable_ceph`` was ``"yes"`` and ``nova_backend`` was set to
+    ``"rbd"``.

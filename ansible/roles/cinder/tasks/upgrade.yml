@@ -1,0 +1,43 @@
+---
+# NOTE (duonghq): I break config into 2 phases to prevent new version
+# of service start if node or process in node crash accidentally.
+- include_tasks: config.yml
+  when: inventory_hostname == groups["cinder-api"][0]
+
+- import_tasks: bootstrap_service.yml
+
+- import_tasks: config.yml
+
+- import_tasks: check-containers.yml
+
+# TODO(bbezak): Remove this task in the Dalmatian cycle.
+- import_role:
+    name: service-ks-register
+  vars:
+    service_ks_register_auth: "{{ openstack_cinder_auth }}"
+    service_ks_register_user_roles: "{{ cinder_ks_user_roles }}"
+
+- name: Flush handlers
+  meta: flush_handlers
+
+- import_tasks: reload.yml
+
+- name: Running Cinder online schema migration
+  vars:
+    cinder_api: "{{ cinder_services['cinder-api'] }}"
+  become: true
+  kolla_docker:
+    action: "start_container"
+    common_options: "{{ docker_common_options }}"
+    detach: False
+    environment:
+      KOLLA_OSM:
+      KOLLA_CONFIG_STRATEGY: "{{ config_strategy }}"
+    image: "{{ cinder_api.image }}"
+    labels:
+      BOOTSTRAP:
+    name: "bootstrap_cinder"
+    restart_policy: no
+    volumes: "{{ cinder_api.volumes }}"
+  run_once: True
+  delegate_to: "{{ groups[cinder_api.group][0] }}"

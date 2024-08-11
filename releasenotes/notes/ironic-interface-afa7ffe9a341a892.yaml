@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Adds ``ironic_http_interface/ironic_http_interface_address``
+    parameters to set the addresses for the ``ironic_http`` service.

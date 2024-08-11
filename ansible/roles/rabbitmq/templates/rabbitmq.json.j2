@@ -1,0 +1,65 @@
+{
+    "command": "/usr/sbin/rabbitmq-server",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/rabbitmq-env.conf",
+            "dest": "/etc/rabbitmq/rabbitmq-env.conf",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/rabbitmq.conf",
+            "dest": "/etc/rabbitmq/rabbitmq.conf",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/erl_inetrc",
+            "dest": "/etc/rabbitmq/erl_inetrc",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/advanced.config",
+            "dest": "/etc/rabbitmq/advanced.config",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/definitions.json",
+            "dest": "/etc/rabbitmq/definitions.json",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/enabled_plugins",
+            "dest": "/etc/rabbitmq/enabled_plugins",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        }{% if rabbitmq_enable_tls | bool %},
+        {
+            "source": "{{ container_config_directory }}/{{ project_name }}-cert.pem",
+            "dest": "/etc/rabbitmq/certs/{{ project_name }}-cert.pem",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        },
+        {
+            "source": "{{ container_config_directory }}/{{ project_name }}-key.pem",
+            "dest": "/etc/rabbitmq/certs/{{ project_name }}-key.pem",
+            "owner": "rabbitmq",
+            "perm": "0600"
+        }{% endif %}
+    ],
+    "permissions": [
+        {
+            "path": "/var/lib/rabbitmq",
+            "owner": "rabbitmq:rabbitmq",
+            "recurse": true
+        },
+        {
+            "path": "/var/log/kolla/{{ project_name }}",
+            "owner": "rabbitmq:rabbitmq",
+            "recurse": true
+        }
+    ]
+}

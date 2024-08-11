@@ -1,0 +1,81 @@
+[DEFAULT]
+debug = {{ masakari_logging_debug }}
+log_dir = /var/log/kolla/masakari
+masakari_api_listen = {{ api_interface_address }}
+masakari_api_listen_port = {{ masakari_api_port }}
+enabled_apis = masakari_api
+state_path = /var/lib/masakari
+transport_url = {{ rpc_transport_url }}
+os_region_name = {{ openstack_region_name }}
+os_user_domain_name = {{ default_user_domain_id }}
+os_project_domain_name = {{ default_project_domain_id }}
+os_privileged_user_tenant = service
+os_privileged_user_auth_url = {{ keystone_internal_url }}
+os_privileged_user_name = {{ nova_keystone_user }}
+os_privileged_user_password = {{ nova_keystone_password }}
+nova_ca_certificates_file = {{ openstack_cacert }}
+
+[database]
+connection = mysql+pymysql://{{ masakari_database_user }}:{{ masakari_database_password }}@{{ masakari_database_address }}/{{ masakari_database_name }}
+connection_recycle_time = {{ database_connection_recycle_time }}
+max_pool_size = {{ database_max_pool_size }}
+max_retries = -1
+
+[keystone_authtoken]
+service_type = instance-ha
+www_authenticate_uri = {{ keystone_internal_url }}
+auth_url = {{ keystone_internal_url }}
+auth_type = password
+project_domain_name = {{ default_project_domain_name }}
+user_domain_name = {{ default_user_domain_name }}
+project_name = service
+username = {{ masakari_keystone_user }}
+password = {{ masakari_keystone_password }}
+service_token_roles_required = True
+region_name = {{ openstack_region_name }}
+cafile = {{ openstack_cacert }}
+
+{% if enable_memcached | bool %}
+memcache_security_strategy = ENCRYPT
+memcache_secret_key = {{ memcache_secret_key }}
+memcached_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif %}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+{% if enable_ceilometer | bool %}
+driver = messagingv2
+topics = notifications
+{% else %}
+driver = noop
+{% endif %}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = {{ service_name == 'masakari-api' }}
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+[oslo_middleware]
+enable_proxy_headers_parsing = True
+
+{% if masakari_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ masakari_policy_file }}
+{% endif %}
+
+[taskflow]
+connection = mysql+pymysql://{{ masakari_database_user }}:{{ masakari_database_password }}@{{ masakari_database_address }}/{{ masakari_database_name }}
+
+{% if service_name == 'masakari-api' %}
+[coordination]
+{% if masakari_coordination_backend == 'redis' %}
+backend_url = {{ redis_connection_string }}
+{% elif masakari_coordination_backend == 'etcd' %}
+backend_url = etcd3+{{ internal_protocol }}://{{ kolla_internal_fqdn }}:{{ etcd_client_port }}{% if openstack_cacert %}?ca_cert={{ openstack_cacert }}{% endif %}
+{% endif %}
+{% endif %}

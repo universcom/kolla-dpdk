@@ -1,0 +1,818 @@
+---
+- hosts: all
+  any_errors_fatal: true
+  tasks:
+    # NOTE(yoctozepto): ensure we pick up fact changes from pre
+    - name: Refresh facts
+      setup:
+
+    # NOTE(yoctozepto): setting vars as facts for all to have them around in all the plays
+    - name: set facts for commonly used variables
+      vars:
+        # NOTE(yoctozepto): needed here to use in other facts too
+        openstack_core_enabled: "{{ scenario not in ['bifrost', 'mariadb', 'prometheus-opensearch', 'venus'] }}"
+      set_fact:
+        kolla_inventory_path: "/etc/kolla/inventory"
+        logs_dir: "/tmp/logs"
+        ansible_collection_kolla_src_dir: "{{ ansible_env.PWD }}/src/{{ zuul.project.canonical_hostname }}/openstack/ansible-collection-kolla"
+        kolla_ansible_src_dir: "{{ ansible_env.PWD }}/src/{{ zuul.project.canonical_hostname }}/openstack/kolla-ansible"
+        kolla_ansible_local_src_dir: "{{ zuul.executor.work_root }}/src/{{ zuul.project.canonical_hostname }}/openstack/kolla-ansible"
+        infra_dockerhub_mirror: "http://{{ zuul_site_mirror_fqdn }}:8082/"
+        need_build_image: "{{ kolla_build_images | default(false) }}"
+        build_image_tag: "change_{{ zuul.change | default('none') }}"
+        openstack_core_enabled: "{{ openstack_core_enabled }}"
+        openstack_core_tested: "{{ scenario in ['core', 'cephadm', 'zun', 'cells', 'swift', 'ovn'] }}"
+        dashboard_enabled: "{{ openstack_core_enabled }}"
+        upper_constraints_file: "{{ ansible_env.HOME }}/src/opendev.org/openstack/requirements/upper-constraints.txt"
+        docker_image_tag_suffix: "{{ '-aarch64' if ansible_architecture == 'aarch64' else '' }}"
+        kolla_ansible_venv_path: "{{ ansible_env.HOME }}/kolla-ansible-venv"
+
+    - name: Install dig for Designate testing
+      become: true
+      package:
+        name: "{{ 'bind-utils' if ansible_os_family == 'RedHat' else 'dnsutils' }}"
+      when: scenario == 'magnum'
+
+    - name: Install xfsprogs package for Swift filesystems
+      become: true
+      package:
+        name: xfsprogs
+      when: scenario == 'swift'
+
+    - name: Prepare disks for a storage service
+      script: "setup_disks.sh {{ disk_type }}"
+      when: scenario in ['cephadm', 'zun', 'swift']
+      become: true
+      vars:
+        disk_type: "{{ 'ceph-lvm' if scenario in ['cephadm'] else scenario }}"
+
+- hosts: primary
+  any_errors_fatal: true
+  vars:
+    kolla_build_config:
+      DEFAULT:
+        profile: gate
+        logs_dir: /tmp/logs/build
+        quiet: true
+        # NOTE(yoctozepto): we cannot build and push at the same time on debian
+        # buster see https://github.com/docker/for-linux/issues/711.
+        push: "{{ base_distro != 'debian' }}"
+        base: "{{ base_distro }}"
+        registry: "127.0.0.1:4000"
+        namespace: lokolla
+        tag: "{{ build_image_tag }}"
+        template_override: /etc/kolla/template_overrides.j2
+        # NOTE(yoctozepto): to avoid issues with IPv6 not enabled in the docker daemon
+        # and since we don't need isolated networks here, use host networking
+        network_mode: host
+  tasks:
+    - name: detect whether need build images
+      set_fact:
+        need_build_image: true
+      when:
+        # NOTE(yoctozepto): build container images if there is any tested
+        # change that impacts them.
+        - item.project.short_name not in ["ansible-collection-kolla", "kayobe", "kolla-ansible", "tenks"]
+      with_items: "{{ zuul['items'] }}"
+
+    # NOTE(yoctozepto): required to template template_overrides.j2 for Zuul
+    - name: Include kolla Zuul vars if building new images
+      include_vars:
+        file: "{{ zuul.executor.work_root }}/src/opendev.org/openstack/kolla/tests/vars/zuul.yml"
+      when: need_build_image
+
+    - block:
+        # NOTE(mgoddard): This only affects the remote copy of the repo, not the
+        # one on the executor.
+        - name: checkout the previous ansible-collection-kolla branch
+          shell:
+            cmd: |
+              git checkout stable/{{ previous_release | lower }}
+              echo "ansible-collection-kolla checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ ansible_collection_kolla_src_dir }}"
+
+        - name: checkout the previous kolla-ansible branch
+          shell:
+            cmd: |
+              git checkout stable/{{ previous_release | lower }}
+              echo "kolla-ansible checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: checkout the previous requirements branch
+          shell:
+            cmd: |
+              git checkout stable/{{ previous_release | lower }}
+              echo "requirements checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ ansible_env.HOME }}/src/opendev.org/openstack/requirements/"
+      when: is_upgrade
+
+    - name: ensure /etc/kolla exists
+      file:
+        path: "/etc/kolla"
+        state: "directory"
+        mode: 0777
+      become: true
+
+    - import_role:
+        name: kolla-build-config
+      when: need_build_image
+
+    # NOTE(yoctozepto): required to customize kolla to use local mirrors
+    - name: Template template_overrides.j2
+      template:
+        src: "{{ zuul.executor.work_root }}/src/opendev.org/openstack/kolla/tests/templates/template_overrides.j2"
+        dest: /etc/kolla/template_overrides.j2
+      when: need_build_image
+
+    - name: Ensure /etc/docker exists
+      file:
+        path: "/etc/docker"
+        state: directory
+      become: true
+
+    - name: Ensure configuration directories exist
+      file:
+        path: "/etc/kolla/config/{{ item }}"
+        state: directory
+      loop:
+        - neutron
+        - nova
+        - bifrost
+        - swift
+
+    - name: generate configuration files
+      template:
+        src: "{{ kolla_ansible_local_src_dir }}/{{ item.src }}"
+        dest: "{{ item.dest }}"
+      become: "{{ item.become | default(false) }}"
+      vars:
+        is_previous_release: "{{ is_upgrade }}"
+      with_items:
+        # Ansible inventory
+        - src: "tests/templates/inventory.j2"
+          dest: "{{ kolla_inventory_path }}"
+        # globals.yml
+        - src: "tests/templates/globals-default.j2"
+          dest: /etc/kolla/globals.yml
+        # global.conf
+        - src: "tests/templates/global.conf.j2"
+          dest: /etc/kolla/config/global.conf
+          when: "{{ openstack_core_enabled }}"
+        # nova-compute.conf
+        - src: "tests/templates/nova-compute-overrides.j2"
+          dest: /etc/kolla/config/nova/nova-compute.conf
+          when: "{{ openstack_core_enabled }}"
+        # neutron.conf
+        - src: "tests/templates/neutron-server-overrides.j2"
+          dest: /etc/kolla/config/neutron.conf
+          when: "{{ openstack_core_enabled }}"
+        # bifrost/dib.yml
+        - src: "tests/templates/bifrost-dib-overrides.j2"
+          dest: /etc/kolla/config/bifrost/dib.yml
+          when: "{{ scenario == 'bifrost' }}"
+        # ironic.conf
+        - src: "tests/templates/ironic-overrides.j2"
+          dest: /etc/kolla/config/ironic.conf
+          when: "{{ scenario == 'ironic' }}"
+        - src: "tests/templates/tenks-deploy-config.yml.j2"
+          dest: "{{ ansible_env.HOME }}/tenks.yml"
+          when: "{{ scenario == 'ironic' }}"
+      when: item.when | default(true)
+
+    - block:
+        - name: ensure ironic config directory exists
+          file:
+            path: /etc/kolla/config/ironic
+            state: directory
+            mode: 0777
+
+        - name: download Ironic Python Agent (IPA) images
+          get_url:
+            url: "https://tarballs.opendev.org/openstack/ironic-python-agent/tinyipa/files/{{ item.src }}"
+            dest: "/etc/kolla/config/ironic/{{ item.dest }}"
+          with_items:
+            - src: "tinyipa-{{ zuul.branch | replace('/', '-') }}.gz"
+              dest: ironic-agent.initramfs
+            - src: "tinyipa-{{ zuul.branch | replace('/', '-') }}.vmlinuz"
+              dest: ironic-agent.kernel
+      when: scenario == "ironic"
+
+    - block:
+        - name: slurp requirements.yml
+          slurp:
+            src: "{{ kolla_ansible_src_dir }}/requirements.yml"
+          register: requirements_yml
+
+        - name: write requirements.yml
+          copy:
+            content: "{{ new_requirements | to_nice_yaml }}"
+            dest: "{{ kolla_ansible_src_dir }}/requirements.yml"
+          vars:
+            old_requirements: "{{ requirements_yml.content | b64decode | from_yaml }}"
+            new_requirement:
+              name: "{{ ansible_collection_kolla_src_dir }}"
+              type: dir
+            new_requirements:
+              collections: "{{ (old_requirements.collections | rejectattr('name', 'search', 'ansible-collection-kolla') | list) + [new_requirement] }}"
+
+    - name: ensure /etc/ansible exists
+      file:
+        path: /etc/ansible
+        state: directory
+      become: true
+
+    - name: Create Kolla Ansible venv
+      command:
+        cmd: "python3 -m venv {{ kolla_ansible_venv_path }}"
+        creates: "{{ kolla_ansible_venv_path }}"
+
+    - name: Ensure the latest tested pip
+      pip:
+        name: "pip==22.*"
+        state: latest
+        virtualenv: "{{ kolla_ansible_venv_path }}"
+
+    - name: Ensure the latest tested setuptools
+      pip:
+        name: "setuptools==65.*"
+        state: latest
+        virtualenv: "{{ kolla_ansible_venv_path }}"
+
+    - name: install kolla-ansible and dependencies
+      vars:
+        ansible_version_min: "==5.*"
+        ansible_version_max: "==6.*"
+        # Test latest ansible version on Ubuntu, minimum supported on others.
+        ansible_version_constraint: >-
+          {{ ansible_version_min if is_upgrade or base_distro != 'ubuntu' else ansible_version_max }}
+      pip:
+        extra_args: "-c {{ upper_constraints_file }}"
+        name:
+          - "{{ kolla_ansible_src_dir }}"
+          - "ansible{{ ansible_version_constraint }}"
+          - "ara<1.0.0"
+        virtualenv: "{{ kolla_ansible_venv_path }}"
+
+    - name: install Ansible collections
+      shell: |
+        source {{ kolla_ansible_venv_path }}/bin/activate
+        kolla-ansible install-deps
+      args:
+        executable: /bin/bash
+
+    - name: get ARA callback plugin path
+      command: "{{ kolla_ansible_venv_path }}/bin/python3 -m ara.setup.callback_plugins"
+      changed_when: false
+      register: ara_callback_plugins
+
+    - name: template ansible.cfg
+      template:
+        src: "{{ kolla_ansible_local_src_dir }}/tests/templates/ansible.cfg.j2"
+        dest: /etc/ansible/ansible.cfg
+      become: true
+
+    - name: copy passwords.yml file
+      copy:
+        src: "{{ kolla_ansible_src_dir }}/etc/kolla/passwords.yml"
+        dest: /etc/kolla/passwords.yml
+        mode: "0640"
+        remote_src: true
+
+    - name: generate passwords
+      command: "{{ kolla_ansible_venv_path }}/bin/kolla-genpwd"
+
+    - name: Record the running state of the environment as seen by the setup module
+      shell:
+        cmd: "{{ kolla_ansible_venv_path }}/bin/ansible all -i {{ kolla_inventory_path }} -m setup > /tmp/logs/ansible/initial-setup"
+
+    - name: Set facts for Swift initialisation
+      set_fact:
+        # NOTE(yoctozepto): no support for upgrades for now
+        docker_image_tag: "{{ build_image_tag if need_build_image else (zuul.branch | basename) ~ '-' ~ base_distro ~ '-' ~ base_distro_version ~ docker_image_tag_suffix }}"
+        docker_image_prefix: "{{ 'primary:4000/lokolla/' if need_build_image else '{{ zuul_site_mirror_fqdn }}:4447/openstack.kolla/' }}"
+      when: scenario in ['swift']
+
+    # NOTE(yoctozepto): k-a octavia-certificates should run before k-a bootstrap-servers
+    # because the latter hijacks /etc/kolla permissions (due to same directory on the
+    # same host being used by both)
+    - name: create TLS certificates for octavia
+      shell: |
+        source {{ kolla_ansible_venv_path }}/bin/activate
+        kolla-ansible octavia-certificates
+      when: scenario in ['octavia']
+      args:
+        executable: /bin/bash
+
+    # NOTE(mgoddard): We are using the script module here and later to ensure
+    # we use the local copy of these scripts, rather than the one on the remote
+    # host, which could be checked out to a previous release (in an upgrade
+    # job).
+    - name: Run setup_gate.sh script
+      script:
+        cmd: setup_gate.sh
+        executable: /bin/bash
+        chdir: "{{ kolla_ansible_src_dir }}"
+      environment:
+        BASE_DISTRO: "{{ base_distro }}"
+        BUILD_IMAGE: "{{ need_build_image }}"
+        KOLLA_SRC_DIR: "{{ ansible_env.HOME }}/src/opendev.org/openstack/kolla"
+        SCENARIO: "{{ scenario }}"
+        UPPER_CONSTRAINTS: "{{ upper_constraints_file }}"
+        KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+    - name: Run init-swift.sh script
+      script:
+        cmd: init-swift.sh
+        executable: /bin/bash
+        chdir: "{{ kolla_ansible_src_dir }}"
+      environment:
+        KOLLA_SWIFT_BASE_IMAGE: "{{ docker_image_prefix }}swift-base:{{ docker_image_tag }}"
+        # NOTE(yoctozepto): no IPv6 for now
+        STORAGE_NODES: "{{ groups['all'] | map('extract', hostvars,
+                           ['ansible_'+api_interface_name, 'ipv4', 'address'])
+                           | join(' ') }}"
+      when: scenario == 'swift'
+
+    # At this point we have generated all necessary configuration, and are
+    # ready to deploy the control plane services. Control flow now depends on
+    # the scenario being exercised.
+
+    # Deploy cephadm on cephadm scenarios
+    - block:
+        - import_role:
+            name: cephadm
+
+        - name: Show free space
+          command:
+            cmd: df -h
+
+        - name: Ensure required kolla config directories exist
+          file:
+            state: directory
+            name: "/etc/kolla/config/{{ item.name }}"
+            mode: 0755
+          with_items: "{{ cephadm_kolla_ceph_services }}"
+
+        - name: copy ceph.conf to enabled services
+          copy:
+            remote_src: True
+            src: "/etc/ceph/ceph.conf.fixed"
+            dest: "/etc/kolla/config/{{ item.name }}/ceph.conf"
+          with_items: "{{ cephadm_kolla_ceph_services }}"
+
+        - name: copy keyrings to enabled services
+          copy:
+            remote_src: True
+            src: "/var/run/ceph/{{ ceph_fsid }}/{{ item.keyring }}"
+            dest: "/etc/kolla/config/{{ item.name }}/{{ item.keyring }}"
+          with_items: "{{ cephadm_kolla_ceph_services }}"
+          become: True
+      vars:
+        cephadm_kolla_ceph_services:
+          - { name: "cinder/cinder-volume", keyring: "ceph.client.cinder.keyring" }
+          - { name: "cinder/cinder-backup", keyring: "ceph.client.cinder.keyring" }
+          - { name: "cinder/cinder-backup", keyring: "ceph.client.cinder-backup.keyring" }
+          - { name: "glance", keyring: "ceph.client.glance.keyring" }
+          - { name: "nova", keyring: "ceph.client.cinder.keyring" }
+      when: scenario == "cephadm"
+
+    # Deploy control plane. For upgrade jobs this is the previous release.
+    - block:
+        - name: Run deploy.sh script
+          script:
+            cmd: deploy.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+        # NOTE(yoctozepto): this is nice as the first step after the deployment
+        # because it waits for the services to stabilize well enough so that
+        # the dashboard is able to show the login prompt
+        - name: Run test-dashboard.sh script
+          script:
+            cmd: test-dashboard.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+          when: dashboard_enabled
+
+        - name: Run init-core-openstack.sh script
+          script:
+            cmd: init-core-openstack.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            EXT_NET_CIDR: "{{ neutron_external_network_prefix }}0/{{ neutron_external_network_prefix_length }}"
+            EXT_NET_RANGE: "start={{ neutron_external_network_prefix }}150,end={{ neutron_external_network_prefix }}199"
+            EXT_NET_GATEWAY: "{{ neutron_external_network_prefix }}1"
+            SCENARIO: "{{ scenario }}"
+          when: openstack_core_tested or scenario in ['ironic', 'magnum', 'scenario_nfv', 'zun', 'octavia']
+
+        - name: Run test-core-openstack.sh script
+          script:
+            cmd: test-core-openstack.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            SCENARIO: "{{ scenario }}"
+            HAS_UPGRADE: "{{ is_upgrade | bool | ternary('yes', 'no') }}"
+            PHASE: deploy
+          when: openstack_core_tested
+
+        - name: Run test-zun.sh script
+          script:
+            cmd: test-zun.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == 'zun'
+          environment:
+            BASE_DISTRO: "{{ base_distro }}"
+
+        - name: Run test-swift.sh script
+          script:
+            cmd: test-swift.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == 'swift'
+
+        - name: Run test-scenario-nfv.sh script
+          script:
+            cmd: test-scenario-nfv.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "scenario_nfv"
+
+        - block:
+            - name: Run deploy-tenks.sh script
+              script:
+                cmd: deploy-tenks.sh
+                executable: /bin/bash
+                chdir: "{{ kolla_ansible_src_dir }}"
+              environment:
+                # NOTE(yoctozepto): This is kolla-ansible-tenks-venv to avoid
+                # a conflict with the venv that Tenks creates by itself
+                # by default to ~/tenks-venv
+                TENKS_VENV_PATH: "{{ ansible_env.HOME }}/kolla-ansible-tenks-venv"
+                TENKS_SRC_PATH: "{{ ansible_env.HOME }}/src/opendev.org/openstack/tenks"
+
+            - name: Run test-ironic.sh script
+              script:
+                cmd: test-ironic.sh
+                executable: /bin/bash
+                chdir: "{{ kolla_ansible_src_dir }}"
+              environment:
+                TLS_ENABLED: "{{ tls_enabled }}"
+          when: scenario == "ironic"
+
+        - name: Run test-magnum.sh script
+          script:
+            cmd: test-magnum.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "magnum"
+          environment:
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+        - name: Run test-octavia.sh script
+          script:
+            cmd: test-octavia.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "octavia"
+
+        - name: Run test-masakari.sh script
+          script:
+            cmd: test-masakari.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "masakari"
+
+        - name: Run test-ovn.sh script
+          script:
+            cmd: test-ovn.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "ovn"
+
+        - name: Run test-mariadb.sh script
+          script:
+            cmd: test-mariadb.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "mariadb"
+          environment:
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+        - name: Run test-prometheus-efk.sh script
+          script:
+            cmd: test-prometheus-efk.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+          when:
+            - is_upgrade
+            - scenario == "prometheus-opensearch"
+            - base_distro != "rocky"
+
+        - name: Run test-prometheus-opensearch.sh script
+          script:
+            cmd: test-prometheus-opensearch.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+          when:
+            - not is_upgrade
+            - scenario == "prometheus-opensearch"
+
+        - name: Run test-venus.sh script
+          script:
+            cmd: test-venus.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == "venus"
+
+      when: scenario != "bifrost"
+
+# NOTE(yoctozepto): each host checks itself
+- hosts: all
+  any_errors_fatal: true
+  tasks:
+    - name: Pre-upgrade sanity checks
+      block:
+        - name: Run pre-upgrade check-failure.sh script
+          shell:
+            cmd: tests/check-failure.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run pre-upgrade check-config.sh script
+          shell:
+            cmd: tests/check-config.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        # Using script rather than shell here because check-logs.sh does not
+        # exist in Stein branch.
+        - name: Run check-logs.sh script
+          script:
+            cmd: check-logs.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+      when: is_upgrade
+
+- hosts: primary
+  any_errors_fatal: true
+  tasks:
+    # Upgrade: update config.
+    - block:
+        # NOTE(mgoddard): This only affects the remote copy of the repo, not the
+        # one on the executor.
+        - name: checkout the current ansible-collection-kolla branch
+          shell:
+            cmd: |
+              git checkout {{ zuul.branch }}
+              echo "ansible-collection-kolla checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ ansible_collection_kolla_src_dir }}"
+
+        # NOTE(frickler): We modified requirements.yml, need to revert the
+        # changes in order for the branch checkout to succeed
+        - name: checkout the current kolla-ansible branch
+          shell:
+            cmd: |
+              git checkout requirements.yml
+              git checkout {{ zuul.branch }}
+              echo "kolla-ansible checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: checkout the current requirements branch
+          shell:
+            cmd: |
+              git checkout {{ zuul.projects["opendev.org/openstack/requirements"].checkout }}
+              echo "requirements checked out to:"
+              git log --pretty=oneline  -1
+            chdir: "{{ ansible_env.HOME }}/src/opendev.org/openstack/requirements/"
+
+        - name: Generate configuration files
+          template:
+            src: "{{ kolla_ansible_local_src_dir }}/{{ item.src }}"
+            dest: "{{ item.dest }}"
+          vars:
+            is_previous_release: false
+          with_items:
+            # Ansible inventory
+            - src: "tests/templates/inventory.j2"
+              dest: "{{ kolla_inventory_path }}"
+            # globals.yml
+            - src: "tests/templates/globals-default.j2"
+              dest: /etc/kolla/globals.yml
+            # nova-compute.conf
+            - src: "tests/templates/nova-compute-overrides.j2"
+              dest: /etc/kolla/config/nova/nova-compute.conf
+          when: item.when | default(true)
+
+        - name: slurp requirements.yml
+          slurp:
+            src: "{{ kolla_ansible_src_dir }}/requirements.yml"
+          register: requirements_yml
+
+        - name: write requirements.yml
+          copy:
+            content: "{{ new_requirements | to_nice_yaml }}"
+            dest: "{{ kolla_ansible_src_dir }}/requirements.yml"
+          vars:
+            old_requirements: "{{ requirements_yml.content | b64decode | from_yaml }}"
+            new_requirement:
+              name: "{{ ansible_collection_kolla_src_dir }}"
+              type: dir
+            new_requirements:
+              collections: "{{ (old_requirements.collections | rejectattr('name', 'search', 'ansible-collection-kolla') | list) + [new_requirement] }}"
+
+        - name: upgrade kolla-ansible
+          pip:
+            extra_args: "-c {{ upper_constraints_file }}"
+            name:
+              - "{{ kolla_ansible_src_dir }}"
+            virtualenv: "{{ kolla_ansible_venv_path }}"
+
+        - name: install Ansible collections
+          shell: |
+            source {{ kolla_ansible_venv_path }}/bin/activate
+            kolla-ansible install-deps
+          args:
+            executable: /bin/bash
+
+        # Update passwords.yml to include any new passwords added in this
+        # release.
+        - name: move passwords.yml to passwords.yml.old
+          command: mv /etc/kolla/passwords.yml /etc/kolla/passwords.yml.old
+
+        - name: copy passwords.yml file
+          copy:
+            src: "{{ kolla_ansible_src_dir }}/etc/kolla/passwords.yml"
+            dest: /etc/kolla/passwords.yml
+            mode: "0640"
+            remote_src: true
+
+        - name: generate new passwords
+          command: "{{ kolla_ansible_venv_path }}/bin/kolla-genpwd"
+
+        - name: merge old and new passwords
+          command: >-
+            {{ kolla_ansible_venv_path }}/bin/kolla-mergepwd
+            --old /etc/kolla/passwords.yml.old
+            --new /etc/kolla/passwords.yml
+            --final /etc/kolla/passwords.yml
+
+        # Perform an upgrade to the in-development code.
+        - name: Run upgrade.sh script
+          shell:
+            cmd: tests/upgrade.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+        # NOTE(yoctozepto): this is nice as the first step after the upgrade
+        # because it waits for the services to stabilize well enough so that
+        # the dashboard is able to show the login prompt
+        - name: Run test-dashboard.sh script
+          shell:
+            cmd: tests/test-dashboard.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+          when: dashboard_enabled
+
+        # NOTE(yoctozepto): We need the script module here to avoid
+        # a bug in Glance OSC [1][2] which results in a failure when a volume
+        # is given as a source. The stdin works differently in shell/command
+        # than script.
+        # [1] https://opendev.org/openstack/python-openstackclient/src/commit/6810414e45a32dd44263dff47fec161989508ef0/openstackclient/image/v2/image.py#L114-L120
+        # [2] https://opendev.org/openstack/python-openstackclient/src/commit/6810414e45a32dd44263dff47fec161989508ef0/openstackclient/image/v2/image.py#L414
+        - name: Run test-core-openstack.sh script
+          script:
+            cmd: test-core-openstack.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            SCENARIO: "{{ scenario }}"
+            HAS_UPGRADE: 'yes'
+            PHASE: upgrade
+          when: openstack_core_tested
+
+        - name: Run test-swift.sh script
+          command:
+            cmd: tests/test-swift.sh
+            chdir: "{{ kolla_ansible_src_dir }}"
+          when: scenario == 'swift'
+
+        - name: Run test-prometheus-opensearch.sh script
+          script:
+            cmd: test-prometheus-opensearch.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            TLS_ENABLED: "{{ tls_enabled }}"
+          when: scenario == "prometheus-opensearch"
+      when: is_upgrade
+
+    # Bifrost testing.
+    - block:
+        - name: Run deploy-bifrost.sh script
+          shell:
+            cmd: tests/deploy-bifrost.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+
+        - name: Run test-bifrost.sh script
+          shell:
+            cmd: tests/test-bifrost.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run upgrade-bifrost.sh script
+          shell:
+            cmd: tests/upgrade-bifrost.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+          environment:
+            KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+      when: scenario == "bifrost"
+
+# NOTE(yoctozepto): each host checks itself
+- hosts: all
+  any_errors_fatal: true
+  tasks:
+    - name: Post-deploy/upgrade sanity checks
+      block:
+        - name: Run check-failure.sh script
+          shell:
+            cmd: tests/check-failure.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run check-config.sh script
+          shell:
+            cmd: tests/check-config.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run check-logs.sh script
+          shell:
+            cmd: tests/check-logs.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+- hosts: primary
+  any_errors_fatal: true
+  tasks:
+    - name: Run reconfigure.sh script
+      script:
+        cmd: reconfigure.sh
+        executable: /bin/bash
+        chdir: "{{ kolla_ansible_src_dir }}"
+      environment:
+        KOLLA_ANSIBLE_VENV_PATH: "{{ kolla_ansible_venv_path }}"
+      when:
+        - not is_upgrade
+        - scenario != "bifrost"
+
+# NOTE(yoctozepto): each host checks itself
+- hosts: all
+  any_errors_fatal: true
+  tasks:
+    - name: Post-reconfigure sanity checks
+      block:
+        - name: Run check-failure.sh script
+          shell:
+            cmd: tests/check-failure.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run check-config.sh script
+          shell:
+            cmd: tests/check-config.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+
+        - name: Run check-logs.sh script
+          shell:
+            cmd: tests/check-logs.sh
+            executable: /bin/bash
+            chdir: "{{ kolla_ansible_src_dir }}"
+      when:
+        - not is_upgrade
+        - scenario != "bifrost"

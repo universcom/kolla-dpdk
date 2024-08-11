@@ -1,0 +1,269 @@
+---
+glance_services:
+  glance-api:
+    container_name: glance_api
+    group: glance-api
+    host_in_groups: "{{ inventory_hostname in glance_api_hosts }}"
+    enabled: true
+    image: "{{ glance_api_image_full }}"
+    environment: "{{ glance_api_container_proxy }}"
+    privileged: "{{ enable_cinder | bool and (enable_cinder_backend_iscsi | bool or cinder_backend_ceph | bool) }}"
+    volumes: "{{ glance_api_default_volumes + glance_api_extra_volumes }}"
+    dimensions: "{{ glance_api_dimensions }}"
+    healthcheck: "{{ glance_api_healthcheck }}"
+    haproxy:
+      glance_api:
+        enabled: "{{ enable_glance | bool and not glance_enable_tls_backend | bool }}"
+        mode: "http"
+        external: false
+        port: "{{ glance_api_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_glance_api_client_timeout }}"
+        backend_http_extra:
+          - "timeout server {{ haproxy_glance_api_server_timeout }}"
+        custom_member_list: "{{ haproxy_members.split(';') }}"
+      glance_api_external:
+        enabled: "{{ enable_glance | bool and not glance_enable_tls_backend | bool }}"
+        mode: "http"
+        external: true
+        port: "{{ glance_api_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_glance_api_client_timeout }}"
+        backend_http_extra:
+          - "timeout server {{ haproxy_glance_api_server_timeout }}"
+        custom_member_list: "{{ haproxy_members.split(';') }}"
+  glance-tls-proxy:
+    container_name: glance_tls_proxy
+    group: glance-api
+    host_in_groups: "{{ inventory_hostname in glance_api_hosts }}"
+    enabled: "{{ glance_enable_tls_backend }}"
+    image: "{{ glance_tls_proxy_image_full }}"
+    volumes: "{{ glance_tls_proxy_default_volumes + glance_tls_proxy_extra_volumes }}"
+    dimensions: "{{ glance_tls_proxy_dimensions }}"
+    healthcheck: "{{ glance_tls_proxy_healthcheck }}"
+    haproxy:
+      glance_tls_proxy:
+        enabled: "{{ enable_glance | bool and glance_enable_tls_backend | bool }}"
+        mode: "http"
+        external: false
+        port: "{{ glance_api_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_glance_api_client_timeout }}"
+        backend_http_extra:
+          - "timeout server {{ haproxy_glance_api_server_timeout }}"
+        custom_member_list: "{{ haproxy_tls_members.split(';') }}"
+        tls_backend: "yes"
+      glance_tls_proxy_external:
+        enabled: "{{ enable_glance | bool and glance_enable_tls_backend | bool }}"
+        mode: "http"
+        external: true
+        port: "{{ glance_api_port }}"
+        frontend_http_extra:
+          - "timeout client {{ haproxy_glance_api_client_timeout }}"
+        backend_http_extra:
+          - "timeout server {{ haproxy_glance_api_server_timeout }}"
+        custom_member_list: "{{ haproxy_tls_members.split(';') }}"
+        tls_backend: "yes"
+
+####################
+# HAProxy
+####################
+haproxy_members: "{% for host in glance_api_hosts %}server {{ hostvars[host].ansible_facts.hostname }} {{ 'api' | kolla_address(host) }}:{{ glance_api_listen_port }} check inter 2000 rise 2 fall 5;{% endfor %}"
+haproxy_tls_members: "{% for host in glance_api_hosts %}server {{ hostvars[host].ansible_facts.hostname }} {{ 'api' | kolla_address(host) }}:{{ glance_api_listen_port }} check inter 2000 rise 2 fall 5 ssl verify required ca-file {{ haproxy_backend_cacert }};{% endfor %}"
+
+####################
+# Keystone
+####################
+glance_ks_services:
+  - name: "glance"
+    type: "image"
+    description: "Openstack Image"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ glance_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ glance_public_endpoint }}'}
+
+glance_ks_users:
+  - project: "service"
+    user: "{{ glance_keystone_user }}"
+    password: "{{ glance_keystone_password }}"
+    role: "admin"
+
+####################
+# Notification
+####################
+glance_notification_topics:
+  - name: notifications
+    enabled: "{{ enable_ceilometer | bool }}"
+
+glance_enabled_notification_topics: "{{ glance_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# Database
+####################
+glance_database_name: "glance"
+glance_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}glance{% endif %}"
+glance_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+glance_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ glance_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+glance_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+glance_database_shard:
+  users:
+    - user: "{{ glance_database_user }}"
+      password: "{{ glance_database_password }}"
+  rules:
+    - schema: "{{ glance_database_name }}"
+      shard_id: "{{ glance_database_shard_id }}"
+
+
+####################
+# HAProxy
+####################
+haproxy_glance_api_client_timeout: "6h"
+haproxy_glance_api_server_timeout: "6h"
+
+
+####################
+# Docker
+####################
+haproxy_tag: "{{ openstack_tag }}"
+glance_tag: "{{ openstack_tag }}"
+
+glance_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/glance-api"
+glance_api_tag: "{{ glance_tag }}"
+glance_api_image_full: "{{ glance_api_image }}:{{ glance_api_tag }}"
+
+glance_tls_proxy_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/haproxy"
+glance_tls_proxy_tag: "{{ haproxy_tag }}"
+glance_tls_proxy_image_full: "{{ glance_tls_proxy_image }}:{{ glance_tls_proxy_tag }}"
+
+glance_api_dimensions: "{{ default_container_dimensions }}"
+glance_tls_proxy_dimensions: "{{ default_container_dimensions }}"
+
+glance_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+glance_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+glance_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+glance_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+glance_api_healthcheck_test: ["CMD-SHELL", "healthcheck_curl http://{% if glance_enable_tls_backend | bool %}localhost{% else %}{{ api_interface_address | put_address_in_context('url') }}{% endif %}:{{ glance_api_listen_port }}"]
+glance_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+glance_api_healthcheck:
+  interval: "{{ glance_api_healthcheck_interval }}"
+  retries: "{{ glance_api_healthcheck_retries }}"
+  start_period: "{{ glance_api_healthcheck_start_period }}"
+  test: "{% if glance_api_enable_healthchecks | bool %}{{ glance_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ glance_api_healthcheck_timeout }}"
+
+glance_tls_proxy_enable_healthchecks: "{{ enable_container_healthchecks }}"
+glance_tls_proxy_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+glance_tls_proxy_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+glance_tls_proxy_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+glance_tls_proxy_healthcheck_test: ["CMD-SHELL", "healthcheck_curl -u {{ haproxy_user }}:{{ haproxy_password }} {{ api_interface_address | put_address_in_context('url') }}:{{ glance_tls_proxy_stats_port }}"]
+glance_tls_proxy_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+glance_tls_proxy_healthcheck:
+  interval: "{{ glance_tls_proxy_healthcheck_interval }}"
+  retries: "{{ glance_tls_proxy_healthcheck_retries }}"
+  start_period: "{{ glance_tls_proxy_healthcheck_start_period }}"
+  test: "{% if glance_tls_proxy_enable_healthchecks | bool %}{{ glance_tls_proxy_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ glance_tls_proxy_healthcheck_timeout }}"
+
+glance_api_default_volumes:
+  - "{{ node_config_directory }}/glance-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "{{ glance_file_datadir_volume }}:/var/lib/glance/"
+  - "{{ kolla_dev_repos_directory ~ '/glance/glance:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/glance' if glance_dev_mode | bool else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  # NOTE(yoctozepto): below to support Cinder iSCSI backends
+  - "{% if enable_cinder | bool and enable_cinder_backend_iscsi | bool %}iscsi_info:/etc/iscsi{% endif %}"
+  - "{% if enable_cinder | bool and enable_cinder_backend_iscsi | bool %}/dev:/dev{% endif %}"
+glance_tls_proxy_default_volumes:
+  - "{{ node_config_directory }}/glance-tls-proxy/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+
+glance_extra_volumes: "{{ default_extra_volumes }}"
+glance_api_extra_volumes: "{{ glance_extra_volumes }}"
+glance_tls_proxy_extra_volumes: "{{ glance_extra_volumes }}"
+
+glance_api_container_proxy: "{{ container_proxy }}"
+
+####################
+# Glance
+####################
+glance_backends:
+  - name: file
+    type: file
+    enabled: "{{ glance_backend_file | bool }}"
+  - name: http
+    type: http
+    enabled: true
+  - name: rbd
+    type: rbd
+    enabled: "{{ glance_backend_ceph | bool }}"
+  - name: vmware
+    type: vmware
+    enabled: "{{ glance_backend_vmware | bool }}"
+  - name: cinder
+    type: cinder
+    enabled: "{{ enable_cinder | bool }}"
+  - name: swift
+    type: swift
+    enabled: "{{ glance_backend_swift | bool }}"
+
+glance_store_backends: "{{ glance_backends | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# OpenStack
+####################
+
+glance_logging_debug: "{{ openstack_logging_debug }}"
+
+openstack_glance_auth: "{{ openstack_auth }}"
+
+glance_api_workers: "{{ openstack_service_workers }}"
+
+###################
+# Kolla
+###################
+glance_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+glance_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+glance_dev_mode: "{{ kolla_dev_mode }}"
+glance_source_version: "{{ kolla_source_version }}"
+
+################################################
+# VMware - OpenStack VMware support
+################################################
+vmware_vcenter_name:
+vmware_datastore_name:
+
+###################
+# Glance cache
+###################
+# Default maximum size of 10Gb
+glance_cache_max_size: "10737418240"
+
+####################
+# Backend TLS proxy
+####################
+syslog_server: "{{ api_interface_address }}"
+syslog_glance_tls_proxy_facility: "local2"
+
+glance_tls_proxy_max_connections: 40000
+glance_tls_proxy_processes: 1
+glance_tls_proxy_process_cpu_map: "no"
+glance_tls_proxy_defaults_max_connections: 10000
+
+# Glance TLS proxy timeout values
+glance_tls_proxy_http_request_timeout: "10s"
+glance_tls_proxy_http_keep_alive_timeout: "10s"
+glance_tls_proxy_queue_timeout: "1m"
+glance_tls_proxy_connect_timeout: "10s"
+glance_tls_proxy_client_timeout: "{{ haproxy_glance_api_client_timeout }}"
+glance_tls_proxy_server_timeout: "{{ haproxy_glance_api_server_timeout }}"
+glance_tls_proxy_check_timeout: "10s"
+
+# Check http://www.haproxy.org/download/1.5/doc/configuration.txt for available options
+glance_tls_proxy_defaults_balance: "roundrobin"

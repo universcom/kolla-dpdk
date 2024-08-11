@@ -1,0 +1,361 @@
+---
+octavia_services:
+  octavia-api:
+    container_name: octavia_api
+    group: octavia-api
+    enabled: true
+    image: "{{ octavia_api_image_full }}"
+    volumes: "{{ octavia_api_default_volumes + octavia_api_extra_volumes }}"
+    dimensions: "{{ octavia_api_dimensions }}"
+    healthcheck: "{{ octavia_api_healthcheck }}"
+    haproxy:
+      octavia_api:
+        enabled: "{{ enable_octavia }}"
+        mode: "http"
+        external: false
+        port: "{{ octavia_api_port }}"
+        listen_port: "{{ octavia_api_listen_port }}"
+        tls_backend: "{{ octavia_enable_tls_backend }}"
+      octavia_api_external:
+        enabled: "{{ enable_octavia }}"
+        mode: "http"
+        external: true
+        port: "{{ octavia_api_port }}"
+        listen_port: "{{ octavia_api_listen_port }}"
+        tls_backend: "{{ octavia_enable_tls_backend }}"
+  octavia-driver-agent:
+    container_name: octavia_driver_agent
+    group: octavia-driver-agent
+    enabled: "{{ enable_octavia_driver_agent }}"
+    image: "{{ octavia_driver_agent_image_full }}"
+    volumes: "{{ octavia_driver_agent_default_volumes + octavia_driver_agent_extra_volumes }}"
+    dimensions: "{{ octavia_driver_agent_dimensions }}"
+  octavia-health-manager:
+    container_name: octavia_health_manager
+    group: octavia-health-manager
+    enabled: true
+    image: "{{ octavia_health_manager_image_full }}"
+    volumes: "{{ octavia_health_manager_default_volumes + octavia_health_manager_extra_volumes }}"
+    dimensions: "{{ octavia_health_manager_dimensions }}"
+    healthcheck: "{{ octavia_health_manager_healthcheck }}"
+  octavia-housekeeping:
+    container_name: octavia_housekeeping
+    group: octavia-housekeeping
+    enabled: true
+    image: "{{ octavia_housekeeping_image_full }}"
+    volumes: "{{ octavia_housekeeping_default_volumes + octavia_housekeeping_extra_volumes }}"
+    dimensions: "{{ octavia_housekeeping_dimensions }}"
+    healthcheck: "{{ octavia_housekeeping_healthcheck }}"
+  octavia-worker:
+    container_name: octavia_worker
+    group: octavia-worker
+    enabled: true
+    image: "{{ octavia_worker_image_full }}"
+    volumes: "{{ octavia_worker_default_volumes + octavia_worker_extra_volumes }}"
+    dimensions: "{{ octavia_worker_dimensions }}"
+    healthcheck: "{{ octavia_worker_healthcheck }}"
+
+octavia_required_roles:
+  - load-balancer_observer
+  - load-balancer_global_observer
+  - load-balancer_member
+  - load-balancer_admin
+  - load-balancer_quota_admin
+
+
+####################
+# Database
+####################
+octavia_database_name: "octavia"
+octavia_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}octavia{% endif %}"
+octavia_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+octavia_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ octavia_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+octavia_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+octavia_database_shard:
+  users:
+    - user: "{{ octavia_database_user }}"
+      password: "{{ octavia_database_password }}"
+  rules:
+    - schema: "{{ octavia_database_name }}"
+      shard_id: "{{ octavia_database_shard_id }}"
+
+
+####################
+# Docker
+####################
+octavia_tag: "{{ openstack_tag }}"
+
+octavia_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/octavia-api"
+octavia_api_tag: "{{ octavia_tag }}"
+octavia_api_image_full: "{{ octavia_api_image }}:{{ octavia_api_tag }}"
+
+octavia_driver_agent_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/octavia-driver-agent"
+octavia_driver_agent_tag: "{{ octavia_tag }}"
+octavia_driver_agent_image_full: "{{ octavia_driver_agent_image }}:{{ octavia_driver_agent_tag }}"
+
+octavia_health_manager_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/octavia-health-manager"
+octavia_health_manager_tag: "{{ octavia_tag }}"
+octavia_health_manager_image_full: "{{ octavia_health_manager_image }}:{{ octavia_health_manager_tag }}"
+
+octavia_housekeeping_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/octavia-housekeeping"
+octavia_housekeeping_tag: "{{ octavia_tag }}"
+octavia_housekeeping_image_full: "{{ octavia_housekeeping_image }}:{{ octavia_housekeeping_tag }}"
+
+octavia_worker_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/octavia-worker"
+octavia_worker_tag: "{{ octavia_tag }}"
+octavia_worker_image_full: "{{ octavia_worker_image }}:{{ octavia_worker_tag }}"
+
+octavia_api_dimensions: "{{ default_container_dimensions }}"
+octavia_driver_agent_dimensions: "{{ default_container_dimensions }}"
+octavia_health_manager_dimensions: "{{ default_container_dimensions }}"
+octavia_housekeeping_dimensions: "{{ default_container_dimensions }}"
+octavia_worker_dimensions: "{{ default_container_dimensions }}"
+
+octavia_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+octavia_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+octavia_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+octavia_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+octavia_api_healthcheck_test: ["CMD-SHELL", "healthcheck_curl {{ 'https' if octavia_enable_tls_backend | bool else 'http' }}://{{ api_interface_address | put_address_in_context('url') }}:{{ octavia_api_listen_port }}"]
+octavia_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+octavia_api_healthcheck:
+  interval: "{{ octavia_api_healthcheck_interval }}"
+  retries: "{{ octavia_api_healthcheck_retries }}"
+  start_period: "{{ octavia_api_healthcheck_start_period }}"
+  test: "{% if octavia_api_enable_healthchecks | bool %}{{ octavia_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ octavia_api_healthcheck_timeout }}"
+
+octavia_health_manager_enable_healthchecks: "{{ enable_container_healthchecks }}"
+octavia_health_manager_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+octavia_health_manager_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+octavia_health_manager_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+octavia_health_manager_healthcheck_test: ["CMD-SHELL", "healthcheck_port octavia-health-manager {{ database_port }}"]
+octavia_health_manager_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+octavia_health_manager_healthcheck:
+  interval: "{{ octavia_health_manager_healthcheck_interval }}"
+  retries: "{{ octavia_health_manager_healthcheck_retries }}"
+  start_period: "{{ octavia_health_manager_healthcheck_start_period }}"
+  test: "{% if octavia_health_manager_enable_healthchecks | bool %}{{ octavia_health_manager_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ octavia_health_manager_healthcheck_timeout }}"
+
+octavia_housekeeping_enable_healthchecks: "{{ enable_container_healthchecks }}"
+octavia_housekeeping_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+octavia_housekeeping_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+octavia_housekeeping_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+octavia_housekeeping_healthcheck_test: ["CMD-SHELL", "healthcheck_port octavia-housekeeping {{ database_port }}"]
+octavia_housekeeping_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+octavia_housekeeping_healthcheck:
+  interval: "{{ octavia_housekeeping_healthcheck_interval }}"
+  retries: "{{ octavia_housekeeping_healthcheck_retries }}"
+  start_period: "{{ octavia_housekeeping_healthcheck_start_period }}"
+  test: "{% if octavia_housekeeping_enable_healthchecks | bool %}{{ octavia_housekeeping_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ octavia_housekeeping_healthcheck_timeout }}"
+
+octavia_worker_enable_healthchecks: "{{ enable_container_healthchecks }}"
+octavia_worker_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+octavia_worker_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+octavia_worker_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+octavia_worker_healthcheck_test: ["CMD-SHELL", "healthcheck_port octavia-worker {{ om_rpc_port }}"]
+octavia_worker_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+octavia_worker_healthcheck:
+  interval: "{{ octavia_worker_healthcheck_interval }}"
+  retries: "{{ octavia_worker_healthcheck_retries }}"
+  start_period: "{{ octavia_worker_healthcheck_start_period }}"
+  test: "{% if octavia_worker_enable_healthchecks | bool %}{{ octavia_worker_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ octavia_worker_healthcheck_timeout }}"
+
+octavia_api_default_volumes:
+  - "{{ node_config_directory }}/octavia-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/octavia/octavia:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/octavia' if octavia_dev_mode | bool else '' }}"
+  - "octavia_driver_agent:/var/run/octavia/"
+octavia_health_manager_default_volumes:
+  - "{{ node_config_directory }}/octavia-health-manager/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/octavia/octavia:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/octavia' if octavia_dev_mode | bool else '' }}"
+octavia_driver_agent_default_volumes:
+  - "{{ node_config_directory }}/octavia-driver-agent/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/octavia/octavia:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/octavia' if octavia_dev_mode | bool else '' }}"
+  - "octavia_driver_agent:/var/run/octavia/"
+octavia_housekeeping_default_volumes:
+  - "{{ node_config_directory }}/octavia-housekeeping/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/octavia/octavia:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/octavia' if octavia_dev_mode | bool else '' }}"
+octavia_worker_default_volumes:
+  - "{{ node_config_directory }}/octavia-worker/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/octavia/octavia:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/octavia' if octavia_dev_mode | bool else '' }}"
+
+octavia_extra_volumes: "{{ default_extra_volumes }}"
+octavia_api_extra_volumes: "{{ octavia_extra_volumes }}"
+octavia_driver_agent_extra_volumes: "{{ octavia_extra_volumes }}"
+octavia_health_manager_extra_volumes: "{{ octavia_extra_volumes }}"
+octavia_housekeeping_extra_volumes: "{{ octavia_extra_volumes }}"
+octavia_worker_extra_volumes: "{{ octavia_extra_volumes }}"
+
+####################
+# OpenStack
+####################
+octavia_logging_debug: "{{ openstack_logging_debug }}"
+
+octavia_keystone_user: "octavia"
+
+# Project that Octavia will use to interact with other services.  Note that in
+# Train and earlier releases this was "admin".
+octavia_service_auth_project: "service"
+
+openstack_octavia_auth: "{{ openstack_auth }}"
+
+octavia_api_workers: "{{ openstack_service_workers }}"
+octavia_healthmanager_health_workers: "{{ openstack_service_workers }}"
+octavia_healthmanager_stats_workers: "{{ openstack_service_workers }}"
+
+####################
+# Keystone
+####################
+octavia_ks_services:
+  - name: "octavia"
+    type: "load-balancer"
+    description: "Octavia Load Balancing Service"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ octavia_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ octavia_public_endpoint }}'}
+
+octavia_ks_users:
+  - project: "service"
+    user: "{{ octavia_keystone_user }}"
+    password: "{{ octavia_keystone_password }}"
+    role: "admin"
+  # NOTE(mgoddard): The default for the service auth project is service, but
+  # may be customised. Ensure the project exists, and assign the octavia user
+  # the admin role in it.
+  - project: "{{ octavia_service_auth_project }}"
+    user: "{{ octavia_keystone_user }}"
+    password: "{{ octavia_keystone_password }}"
+    role: "admin"
+
+####################
+# Kolla
+####################
+octavia_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+octavia_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+octavia_dev_mode: "{{ kolla_dev_mode }}"
+octavia_source_version: "{{ kolla_source_version }}"
+
+#####################
+# Integration Options
+#####################
+octavia_amp_ssh_key_name: "octavia_ssh_key"
+octavia_amp_listen_port: "9443"
+octavia_amp_image_tag: "amphora"
+
+# Load balancer topology options are [ SINGLE, ACTIVE_STANDBY ]
+octavia_loadbalancer_topology: "SINGLE"
+
+# OpenStack auth used when registering resources for Octavia.
+octavia_user_auth:
+  auth_url: "{{ keystone_internal_url }}"
+  username: "octavia"
+  password: "{{ octavia_keystone_password }}"
+  project_name: "{{ octavia_service_auth_project }}"
+  domain_name: "{{ default_project_domain_name }}"
+
+# Octavia amphora flavor.
+# See os_nova_flavor for details. Supported parameters:
+# - disk
+# - ephemeral (optional)
+# - extra_specs (optional)
+# - flavorid (optional)
+# - is_public (optional)
+# - name
+# - ram
+# - swap (optional)
+# - vcpus
+octavia_amp_flavor:
+  name: "amphora"
+  is_public: no
+  vcpus: 1
+  ram: 1024
+  disk: 5
+
+# Octavia security groups. lb-mgmt-sec-grp is for amphorae.
+# lb-health-mgr-sec-grp is used for health manager ports.
+octavia_amp_security_groups:
+  mgmt-sec-grp:
+    name: "lb-mgmt-sec-grp"
+    enabled: true
+    rules:
+      - protocol: "{{ 'ipv6-icmp' if octavia_network_address_family == 'ipv6' else 'icmp' }}"
+      - protocol: tcp
+        src_port: 22
+        dst_port: 22
+      - protocol: tcp
+        src_port: "{{ octavia_amp_listen_port }}"
+        dst_port: "{{ octavia_amp_listen_port }}"
+  health-mgr-sec-grp:
+    name: "lb-health-mgr-sec-grp"
+    enabled: "{{ true if octavia_network_type == 'tenant' else false }}"
+    rules:
+      - protocol: udp
+        src_port: "{{ octavia_health_manager_port }}"
+        dst_port: "{{ octavia_health_manager_port }}"
+
+# Octavia management network.
+# See os_network and os_subnet for details. Supported parameters:
+# - external (optional)
+# - mtu (optional)
+# - name
+# - provider_network_type (optional)
+# - provider_physical_network (optional)
+# - provider_segmentation_id (optional)
+# - shared (optional)
+# - subnet
+# The subnet parameter has the following supported parameters:
+# - allocation_pool_start (optional)
+# - allocation_pool_end (optional)
+# - cidr
+# - enable_dhcp (optional)
+# - gateway_ip (optional)
+# - name
+# - no_gateway_ip (optional)
+# - ip_version (optional)
+# - ipv6_address_mode (optional)
+# - ipv6_ra_mode (optional)
+octavia_amp_network:
+  name: lb-mgmt-net
+  shared: false
+  subnet:
+    name: lb-mgmt-subnet
+    cidr: "{{ octavia_amp_network_cidr }}"
+    no_gateway_ip: yes
+    enable_dhcp: yes
+
+# Octavia management network subnet CIDR.
+octavia_amp_network_cidr: 10.1.0.0/24
+
+octavia_amp_router:
+  name: lb-mgmt-router
+  subnet: "{{ octavia_amp_network['subnet']['name'] }}"
+
+# Octavia provider drivers
+octavia_provider_drivers: "amphora:Amphora provider{% if neutron_plugin_agent == 'ovn' %}, ovn:OVN provider{% endif %}"
+octavia_provider_agents: "amphora_agent{% if neutron_plugin_agent == 'ovn' %}, ovn{% endif %}"
+
+####################
+# TLS
+####################
+octavia_enable_tls_backend: "{{ kolla_enable_tls_backend }}"

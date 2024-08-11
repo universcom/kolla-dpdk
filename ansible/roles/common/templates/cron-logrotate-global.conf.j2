@@ -1,0 +1,24 @@
+{{ cron_logrotate_rotation_interval }}
+
+rotate {{ cron_logrotate_rotation_count }}
+
+copytruncate
+
+compress
+
+delaycompress
+
+notifempty
+
+missingok
+
+minsize {{ cron_logrotate_log_minsize }}
+
+maxsize {{ cron_logrotate_log_maxsize }}
+
+su root kolla
+
+{% for service in cron_logrotate_enabled_services %}
+{% include "cron-logrotate-" ~ service ~ ".conf.j2" %}
+
+{% endfor %}

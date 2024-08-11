@@ -1,0 +1,28 @@
+{
+    "command": "/usr/share/opensearch-dashboards/bin/opensearch-dashboards --config /etc/opensearch-dashboards/opensearch_dashboards.yml",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/opensearch_dashboards.yml",
+            "dest": "/etc/opensearch-dashboards/opensearch_dashboards.yml",
+            "owner": "opensearch-dashboards",
+            "perm": "0640"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/opensearch-dashboards",
+            "owner": "opensearch-dashboards:opensearch-dashboards",
+            "recurse": true
+        },
+        {
+            "path": "/usr/share/opensearch-dashboards/optimize/bundles",
+            "owner": "opensearch-dashboards:opensearch-dashboards",
+            "recurse": true
+        },
+        {
+            "path": "/var/lib/opensearch-dashboards",
+            "owner": "opensearch-dashboards:opensearch-dashboards",
+            "recurse": true
+        }
+    ]
+}

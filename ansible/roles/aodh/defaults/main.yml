@@ -1,0 +1,238 @@
+---
+aodh_services:
+  aodh-api:
+    container_name: aodh_api
+    group: aodh-api
+    enabled: true
+    image: "{{ aodh_api_image_full }}"
+    volumes: "{{ aodh_api_default_volumes + aodh_api_extra_volumes }}"
+    dimensions: "{{ aodh_api_dimensions }}"
+    healthcheck: "{{ aodh_api_healthcheck }}"
+    haproxy:
+      aodh_api:
+        enabled: "{{ enable_aodh }}"
+        mode: "http"
+        external: false
+        port: "{{ aodh_api_port }}"
+        listen_port: "{{ aodh_api_listen_port }}"
+      aodh_api_external:
+        enabled: "{{ enable_aodh }}"
+        mode: "http"
+        external: true
+        port: "{{ aodh_api_port }}"
+        listen_port: "{{ aodh_api_listen_port }}"
+  aodh-evaluator:
+    container_name: aodh_evaluator
+    group: aodh-evaluator
+    enabled: true
+    image: "{{ aodh_evaluator_image_full }}"
+    volumes: "{{ aodh_evaluator_default_volumes + aodh_evaluator_extra_volumes }}"
+    dimensions: "{{ aodh_evaluator_dimensions }}"
+    healthcheck: "{{ aodh_evaluator_healthcheck }}"
+  aodh-listener:
+    container_name: aodh_listener
+    group: aodh-listener
+    enabled: true
+    image: "{{ aodh_listener_image_full }}"
+    volumes: "{{ aodh_listener_default_volumes + aodh_listener_extra_volumes }}"
+    dimensions: "{{ aodh_listener_dimensions }}"
+    healthcheck: "{{ aodh_listener_healthcheck }}"
+  aodh-notifier:
+    container_name: aodh_notifier
+    group: aodh-notifier
+    enabled: true
+    image: "{{ aodh_notifier_image_full }}"
+    volumes: "{{ aodh_notifier_default_volumes + aodh_notifier_extra_volumes }}"
+    dimensions: "{{ aodh_notifier_dimensions }}"
+    healthcheck: "{{ aodh_notifier_healthcheck }}"
+
+
+# Aodh Evaluation interval - Period of evaluation cycle, should
+# be >= than configured polling interval for collection of
+# underlying meters which by default be defined in
+# /etc/ceilometer/polling.yaml (300).
+# If you uses a custom polling.yaml which has a different interval,
+# change this option.
+aodh_evaluation_interval: 300
+
+
+####################
+# Database
+####################
+aodh_database_name: "aodh"
+aodh_database_user: "{% if use_preconfigured_databases | bool and use_common_mariadb_user | bool %}{{ database_user }}{% else %}aodh{% endif %}"
+aodh_database_address: "{{ database_address | put_address_in_context('url') }}:{{ database_port }}"
+
+####################
+# Database sharding
+####################
+aodh_database_shard_root_user: "{% if enable_proxysql | bool %}root_shard_{{ aodh_database_shard_id }}{% else %}{{ database_user }}{% endif %}"
+aodh_database_shard_id: "{{ mariadb_default_database_shard_id | int }}"
+aodh_database_shard:
+  users:
+    - user: "{{ aodh_database_user }}"
+      password: "{{ aodh_database_password }}"
+  rules:
+    - schema: "{{ aodh_database_name }}"
+      shard_id: "{{ aodh_database_shard_id }}"
+
+
+####################
+# Notification
+####################
+aodh_notification_topics:
+  - name: notifications
+    enabled: "{{ enable_ceilometer | bool }}"
+  - name: vitrage_notifications
+    enabled: "{{ enable_vitrage | bool }}"
+
+aodh_enabled_notification_topics: "{{ aodh_notification_topics | selectattr('enabled', 'equalto', true) | list }}"
+
+####################
+# Docker
+####################
+aodh_tag: "{{ openstack_tag }}"
+
+aodh_api_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/aodh-api"
+aodh_api_tag: "{{ aodh_tag }}"
+aodh_api_image_full: "{{ aodh_api_image }}:{{ aodh_api_tag }}"
+
+aodh_evaluator_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/aodh-evaluator"
+aodh_evaluator_tag: "{{ aodh_tag }}"
+aodh_evaluator_image_full: "{{ aodh_evaluator_image }}:{{ aodh_evaluator_tag }}"
+
+aodh_listener_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/aodh-listener"
+aodh_listener_tag: "{{ aodh_tag }}"
+aodh_listener_image_full: "{{ aodh_listener_image }}:{{ aodh_listener_tag }}"
+
+aodh_notifier_image: "{{ docker_registry ~ '/' if docker_registry else '' }}{{ docker_namespace }}/aodh-notifier"
+aodh_notifier_tag: "{{ aodh_tag }}"
+aodh_notifier_image_full: "{{ aodh_notifier_image }}:{{ aodh_notifier_tag }}"
+
+aodh_api_dimensions: "{{ default_container_dimensions }}"
+aodh_evaluator_dimensions: "{{ default_container_dimensions }}"
+aodh_listener_dimensions: "{{ default_container_dimensions }}"
+aodh_notifier_dimensions: "{{ default_container_dimensions }}"
+
+aodh_api_enable_healthchecks: "{{ enable_container_healthchecks }}"
+aodh_api_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+aodh_api_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+aodh_api_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+aodh_api_healthcheck_test: ["CMD-SHELL", "healthcheck_curl http://{{ api_interface_address | put_address_in_context('url') }}:{{ aodh_api_listen_port }}"]
+aodh_api_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+aodh_api_healthcheck:
+  interval: "{{ aodh_api_healthcheck_interval }}"
+  retries: "{{ aodh_api_healthcheck_retries }}"
+  start_period: "{{ aodh_api_healthcheck_start_period }}"
+  test: "{% if aodh_api_enable_healthchecks | bool %}{{ aodh_api_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ aodh_api_healthcheck_timeout }}"
+
+aodh_evaluator_enable_healthchecks: "{{ enable_container_healthchecks }}"
+aodh_evaluator_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+aodh_evaluator_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+aodh_evaluator_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+aodh_evaluator_healthcheck_test: ["CMD-SHELL", "healthcheck_port aodh-evaluator {{ database_port }}"]
+aodh_evaluator_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+aodh_evaluator_healthcheck:
+  interval: "{{ aodh_evaluator_healthcheck_interval }}"
+  retries: "{{ aodh_evaluator_healthcheck_retries }}"
+  start_period: "{{ aodh_evaluator_healthcheck_start_period }}"
+  test: "{% if aodh_evaluator_enable_healthchecks | bool %}{{ aodh_evaluator_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ aodh_evaluator_healthcheck_timeout }}"
+
+aodh_listener_enable_healthchecks: "{{ enable_container_healthchecks }}"
+aodh_listener_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+aodh_listener_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+aodh_listener_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+aodh_listener_healthcheck_test: ["CMD-SHELL", "healthcheck_port aodh-listener {{ om_rpc_port }}"]
+aodh_listener_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+aodh_listener_healthcheck:
+  interval: "{{ aodh_listener_healthcheck_interval }}"
+  retries: "{{ aodh_listener_healthcheck_retries }}"
+  start_period: "{{ aodh_listener_healthcheck_start_period }}"
+  test: "{% if aodh_listener_enable_healthchecks | bool %}{{ aodh_listener_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ aodh_listener_healthcheck_timeout }}"
+
+aodh_notifier_enable_healthchecks: "{{ enable_container_healthchecks }}"
+aodh_notifier_healthcheck_interval: "{{ default_container_healthcheck_interval }}"
+aodh_notifier_healthcheck_retries: "{{ default_container_healthcheck_retries }}"
+aodh_notifier_healthcheck_start_period: "{{ default_container_healthcheck_start_period }}"
+aodh_notifier_healthcheck_test: ["CMD-SHELL", "healthcheck_port aodh-notifier {{ om_rpc_port }}"]
+aodh_notifier_healthcheck_timeout: "{{ default_container_healthcheck_timeout }}"
+aodh_notifier_healthcheck:
+  interval: "{{ aodh_notifier_healthcheck_interval }}"
+  retries: "{{ aodh_notifier_healthcheck_retries }}"
+  start_period: "{{ aodh_notifier_healthcheck_start_period }}"
+  test: "{% if aodh_notifier_enable_healthchecks | bool %}{{ aodh_notifier_healthcheck_test }}{% else %}NONE{% endif %}"
+  timeout: "{{ aodh_notifier_healthcheck_timeout }}"
+
+aodh_api_default_volumes:
+  - "{{ node_config_directory }}/aodh-api/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "aodh:/var/lib/aodh/"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/aodh/aodh:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/aodh' if aodh_dev_mode | bool else '' }}"
+aodh_evaluator_default_volumes:
+  - "{{ node_config_directory }}/aodh-evaluator/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/aodh/aodh:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/aodh' if aodh_dev_mode | bool else '' }}"
+aodh_listener_default_volumes:
+  - "{{ node_config_directory }}/aodh-listener/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/aodh/aodh:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/aodh' if aodh_dev_mode | bool else '' }}"
+aodh_notifier_default_volumes:
+  - "{{ node_config_directory }}/aodh-notifier/:{{ container_config_directory }}/:ro"
+  - "/etc/localtime:/etc/localtime:ro"
+  - "{{ '/etc/timezone:/etc/timezone:ro' if ansible_facts.os_family == 'Debian' else '' }}"
+  - "kolla_logs:/var/log/kolla/"
+  - "{{ kolla_dev_repos_directory ~ '/aodh/aodh:/var/lib/kolla/venv/lib/python' ~ distro_python_version ~ '/site-packages/aodh' if aodh_dev_mode | bool else '' }}"
+
+aodh_extra_volumes: "{{ default_extra_volumes }}"
+aodh_api_extra_volumes: "{{ aodh_extra_volumes }}"
+aodh_evaluator_extra_volumes: "{{ aodh_extra_volumes }}"
+aodh_listener_extra_volumes: "{{ aodh_extra_volumes }}"
+aodh_notifier_extra_volumes: "{{ aodh_extra_volumes }}"
+
+####################
+# OpenStack
+####################
+aodh_internal_endpoint: "{{ internal_protocol }}://{{ aodh_internal_fqdn | put_address_in_context('url') }}:{{ aodh_api_port }}"
+aodh_public_endpoint: "{{ public_protocol }}://{{ aodh_external_fqdn | put_address_in_context('url') }}:{{ aodh_api_port }}"
+
+aodh_logging_debug: "{{ openstack_logging_debug }}"
+
+aodh_keystone_user: "aodh"
+
+openstack_aodh_auth: "{{ openstack_auth }}"
+
+aodh_api_workers: "{{ openstack_service_workers }}"
+
+####################
+# Kolla
+####################
+aodh_git_repository: "{{ kolla_dev_repos_git }}/{{ project_name }}"
+aodh_dev_repos_pull: "{{ kolla_dev_repos_pull }}"
+aodh_dev_mode: "{{ kolla_dev_mode }}"
+aodh_source_version: "{{ kolla_source_version }}"
+
+####################
+# Keystone
+####################
+aodh_ks_services:
+  - name: "aodh"
+    type: "alarming"
+    description: "OpenStack Alarming Service"
+    endpoints:
+      - {'interface': 'internal', 'url': '{{ aodh_internal_endpoint }}'}
+      - {'interface': 'public', 'url': '{{ aodh_public_endpoint }}'}
+
+aodh_ks_users:
+  - project: "service"
+    user: "{{ aodh_keystone_user }}"
+    password: "{{ aodh_keystone_password }}"
+    role: "admin"

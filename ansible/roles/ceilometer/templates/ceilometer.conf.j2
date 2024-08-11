@@ -1,0 +1,56 @@
+[DEFAULT]
+debug = {{ ceilometer_logging_debug }}
+
+log_dir = /var/log/kolla/ceilometer
+
+transport_url = {{ rpc_transport_url }}
+
+{% if nova_compute_virt_type == 'vmware' %}
+hypervisor_inspector = vsphere
+{% endif %}
+
+[service_credentials]
+auth_url = {{ keystone_internal_url }}
+region_name = {{ openstack_region_name }}
+password = {{ ceilometer_keystone_password }}
+username = {{ ceilometer_keystone_user }}
+project_name = service
+project_domain_id = {{ default_project_domain_id }}
+user_domain_id = {{ default_user_domain_id }}
+auth_type = password
+interface = internal
+cafile = {{ openstack_cacert }}
+
+{% if nova_compute_virt_type == 'vmware' %}
+[vmware]
+host_ip = {{ vmware_vcenter_host_ip }}
+host_username = {{ vmware_vcenter_host_username }}
+host_password = {{ vmware_vcenter_host_password }}
+insecure = {{ vmware_vcenter_insecure }}
+{% if not vmware_vcenter_insecure | bool %}
+ca_file = /etc/ceilometer/vmware_ca
+{% endif %}
+{% endif %}
+
+[oslo_messaging_notifications]
+transport_url = {{ notify_transport_url }}
+
+[oslo_messaging_rabbit]
+heartbeat_in_pthread = false
+{% if om_enable_rabbitmq_tls | bool %}
+ssl = true
+ssl_ca_file = {{ om_rabbitmq_cacert }}
+{% endif %}
+{% if om_enable_rabbitmq_high_availability | bool %}
+amqp_durable_queues = true
+{% endif %}
+
+{% if ceilometer_policy_file is defined %}
+[oslo_policy]
+policy_file = {{ ceilometer_policy_file }}
+{% endif %}
+
+[cache]
+backend = oslo_cache.memcache_pool
+enabled = True
+memcache_servers = {% for host in groups['memcached'] %}{{ 'api' | kolla_address(host) | put_address_in_context('memcache') }}:{{ memcached_port }}{% if not loop.last %},{% endif %}{% endfor %}

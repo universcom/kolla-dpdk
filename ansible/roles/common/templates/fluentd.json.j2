@@ -1,0 +1,36 @@
+{% set fluentd_user = 'td-agent' %}
+{% set fluentd_dir = '/etc/td-agent' %}
+{% set fluentd_conf = 'td-agent.conf' %}
+{% set fluentd_cmd = '/usr/sbin/td-agent' %}
+
+{
+    "command": "{{ fluentd_cmd }} -o /var/log/kolla/fluentd/fluentd.log",
+    "config_files": [
+        {
+            "source": "{{ container_config_directory }}/td-agent.conf",
+            "dest": "{{ fluentd_dir }}/{{ fluentd_conf }}",
+            "owner": "{{ fluentd_user }}",
+            "perm": "0600"
+        }
+    ],
+    "permissions": [
+        {
+            "path": "/var/log/kolla/fluentd",
+            "owner": "{{ fluentd_user }}:{{ fluentd_user }}",
+            "recurse": true
+        },
+{% for facility in syslog_facilities | selectattr('enabled') %}
+        {
+            "path": "/var/log/kolla/{{ facility.logdir }}",
+            "owner": "{{ fluentd_user }}:{{ fluentd_user }}",
+            "recurse": true
+        },
+{% endfor %}
+        {
+            "path": "/var/lib/fluentd/data",
+            "owner": "{{ fluentd_user }}:{{ fluentd_user }}",
+            "recurse": true
+        }
+    ]
+
+}

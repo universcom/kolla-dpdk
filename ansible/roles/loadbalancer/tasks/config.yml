@@ -1,0 +1,267 @@
+---
+- name: Ensuring config directories exist
+  file:
+    path: "{{ node_config_directory }}/{{ item.key }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[item.value.group]
+    - item.value.enabled | bool
+  with_dict: "{{ loadbalancer_services }}"
+
+- name: Ensuring haproxy service config subdir exists
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  file:
+    path: "{{ node_config_directory }}/haproxy/services.d"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+
+- name: Ensuring proxysql service config subdirectories exist
+  vars:
+    service: "{{ loadbalancer_services['proxysql'] }}"
+  file:
+    path: "{{ node_config_directory }}/proxysql/{{ item }}"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  with_items:
+    - "users"
+    - "rules"
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+
+- name: Ensuring keepalived checks subdir exists
+  vars:
+    service: "{{ loadbalancer_services['keepalived'] }}"
+  file:
+    path: "{{ node_config_directory }}/keepalived/checks"
+    state: "directory"
+    owner: "{{ config_owner_user }}"
+    group: "{{ config_owner_group }}"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+
+- name: Remove mariadb.cfg if proxysql enabled
+  vars:
+    service: "{{ loadbalancer_services['keepalived'] }}"
+  file:
+    path: "{{ node_config_directory }}/haproxy/services.d/mariadb.cfg"
+    state: absent
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+    - loadbalancer_services.proxysql.enabled | bool
+  notify:
+    - Restart haproxy container
+
+- name: Removing checks for services which are disabled
+  vars:
+    service: "{{ loadbalancer_services['keepalived'] }}"
+  file:
+    path: "{{ node_config_directory }}/keepalived/checks/check_alive_{{ item.key }}.sh"
+    state: absent
+  become: true
+  with_dict: "{{ loadbalancer_services }}"
+  when:
+    - inventory_hostname in groups[service.group]
+    - item.key != 'keepalived'
+    - not item.value.enabled | bool
+      or not inventory_hostname in groups[item.value.group]
+    - service.enabled | bool
+  notify:
+    - Restart keepalived container
+
+- name: Copying checks for services which are enabled
+  vars:
+    service: "{{ loadbalancer_services['keepalived'] }}"
+  template:
+    src: "keepalived/check_alive_{{ item.key }}.sh.j2"
+    dest: "{{ node_config_directory }}/keepalived/checks/check_alive_{{ item.key }}.sh"
+    mode: "0770"
+  become: true
+  with_dict: "{{ loadbalancer_services }}"
+  when:
+    - keepalived_track_script_enabled | bool
+    - inventory_hostname in groups[service.group]
+    - inventory_hostname in groups[item.value.group]
+    - item.key != 'keepalived'
+    - item.value.enabled | bool
+    - service.enabled | bool
+  notify:
+    - Restart keepalived container
+
+- name: Copying over config.json files for services
+  template:
+    src: "{{ item.key }}/{{ item.key }}.json.j2"
+    dest: "{{ node_config_directory }}/{{ item.key }}/config.json"
+    mode: "0660"
+  become: true
+  when:
+    - inventory_hostname in groups[item.value.group]
+    - item.value.enabled | bool
+  with_dict: "{{ loadbalancer_services }}"
+  notify:
+    - "Restart {{ item.key }} container"
+
+- name: Copying over haproxy.cfg
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/haproxy/haproxy.cfg"
+    mode: "0660"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/haproxy/{{ inventory_hostname }}/haproxy_main.cfg"
+    - "{{ node_custom_config }}/haproxy/haproxy_main.cfg"
+    - "haproxy/haproxy_main.cfg.j2"
+  notify:
+    - Restart haproxy container
+
+- name: Copying over proxysql config
+  vars:
+    service: "{{ loadbalancer_services['proxysql'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/proxysql/proxysql.yaml"
+    mode: "0660"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/proxysql/{{ inventory_hostname }}/proxysql.yaml"
+    - "{{ node_custom_config }}/proxysql/proxysql.yaml"
+    - "proxysql/proxysql.yaml.j2"
+  notify:
+    - Restart proxysql container
+
+- name: Copying over custom haproxy services configuration
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/haproxy/services.d/"
+    mode: "0660"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_fileglob:
+    - "{{ node_custom_config }}/haproxy/services.d/*.cfg"
+  notify:
+    - Restart haproxy container
+
+- name: Copying over keepalived.conf
+  vars:
+    service: "{{ loadbalancer_services['keepalived'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/keepalived/keepalived.conf"
+    mode: "0660"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/keepalived/{{ inventory_hostname }}/keepalived.conf"
+    - "{{ node_custom_config }}/keepalived/keepalived.conf"
+    - "keepalived/keepalived.conf.j2"
+  notify:
+    - Restart keepalived container
+
+- name: Copying over haproxy.pem
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  copy:
+    src: "{{ kolla_external_fqdn_cert }}"
+    dest: "{{ node_config_directory }}/haproxy/{{ item }}"
+    mode: "0660"
+  become: true
+  when:
+    - kolla_enable_tls_external | bool
+    - not kolla_externally_managed_cert | bool
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_items:
+    - "haproxy.pem"
+  notify:
+    - Restart haproxy container
+
+- name: Copying over haproxy-internal.pem
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  copy:
+    src: "{{ kolla_internal_fqdn_cert }}"
+    dest: "{{ node_config_directory }}/haproxy/{{ item }}"
+    mode: "0660"
+  become: true
+  when:
+    - kolla_enable_tls_internal | bool
+    - not kolla_externally_managed_cert | bool
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_items:
+    - "haproxy-internal.pem"
+  notify:
+    - Restart haproxy container
+
+- include_tasks: copy-certs.yml
+  when:
+    - kolla_copy_ca_into_containers | bool
+
+- name: Copying over haproxy start script
+  vars:
+    service: "{{ loadbalancer_services['haproxy'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/haproxy/haproxy_run.sh"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/haproxy/{{ inventory_hostname }}/haproxy_run.sh"
+    - "{{ node_custom_config }}/haproxy/haproxy_run.sh"
+    - "haproxy/haproxy_run.sh.j2"
+  notify:
+    - Restart haproxy container
+
+- name: Copying over proxysql start script
+  vars:
+    service: "{{ loadbalancer_services['proxysql'] }}"
+  template:
+    src: "{{ item }}"
+    dest: "{{ node_config_directory }}/proxysql/proxysql_run.sh"
+    mode: "0770"
+  become: true
+  when:
+    - inventory_hostname in groups[service.group]
+    - service.enabled | bool
+  with_first_found:
+    - "{{ node_custom_config }}/proxysql/{{ inventory_hostname }}/proxysql_run.sh"
+    - "{{ node_custom_config }}/proxysql/proxysql_run.sh"
+    - "proxysql/proxysql_run.sh.j2"
+  notify:
+    - Restart proxysql container
