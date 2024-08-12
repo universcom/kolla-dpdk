@@ -5,5 +5,8 @@
 
 - import_tasks: setup-ovs.yml
 
+- import_tasks: dpdk_integration.yml
+  when: (enable_ovs_dpdk | bool) and (inventory_hostname in groups['ovs-dpdk'])
+
 - name: Flush handlers
   meta: flush_handlers
