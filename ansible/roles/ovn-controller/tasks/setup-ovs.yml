@@ -38,3 +38,8 @@
     - { name: ovn-chassis-mac-mappings, value: "{{ ovn_macs }}", state: "{{ 'present' if inventory_hostname in groups['ovn-controller-compute'] else 'absent' }}" }
     - { name: ovn-cms-options, value: "{{ ovn_cms_opts }}", state: "{{ 'present' if ovn_cms_opts != '' else 'absent' }}" }
   when: inventory_hostname in groups.get('ovn-controller', [])
+
+- name: set manager for open_vswitch
+  become: true
+  shell: "ovs-vsctl set-manager ptcp:6640:127.0.0.1"
+  when: inventory_hostname in groups.get('ovs-dpdk', [])
