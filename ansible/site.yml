@@ -588,18 +588,17 @@
 - name: Apply role openvswitch
   gather_facts: false
   hosts:
-    - openvswitch
-    - '&enable_openvswitch_True_enable_ovs_dpdk_False'
+    - openvswitch:!ovs-dpdk
   serial: '{{ kolla_serial|default("0") }}'
   roles:
     - { role: openvswitch,
         tags: openvswitch,
-        when: "(enable_openvswitch | bool) and not (enable_ovs_dpdk | bool)"}
+        when: "(enable_openvswitch | bool)"}
 
 - name: Apply role ovs-dpdk
   gather_facts: false
   hosts:
-    - openvswitch
+    - ovs-dpdk
     - '&enable_openvswitch_True_enable_ovs_dpdk_True'
   serial: '{{ kolla_serial|default("0") }}'
   roles:
