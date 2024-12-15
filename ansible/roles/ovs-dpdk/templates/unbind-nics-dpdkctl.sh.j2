@@ -52,10 +52,11 @@ function get_driver_by_address {
 
 function list_dpdk_nics {
     declare -a dpdk_nics
-    for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+    #for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+    for nic in $(get_value ovs_dpdk_bondig_configs interfaces | tr ',' '\n'); do
         dpdk_nics+="$nic "
     done
-    dpdk_nics+=$(get_value ovs_tunnel tunnel_interface)
+    #dpdk_nics+=$(get_value ovs_tunnel tunnel_interface)
     for nic in ${dpdk_nics[*]}; do
         echo $nic;
     done
