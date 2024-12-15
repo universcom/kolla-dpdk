@@ -1,0 +1,8 @@
+---
+- name: Delete role ovs-dpdk
+  include_role:
+    name: ovs-dpdk
+  vars:
+    kolla_action: destroy
+  tags: ovs-dpdk
+  when: enable_openvswitch | bool and enable_ovs_dpdk | bool
