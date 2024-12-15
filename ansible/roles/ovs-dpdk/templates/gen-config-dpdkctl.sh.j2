@@ -1,78 +1,108 @@
 #!/bin/bash
 
-
+# Function to generate configurations
 function gen_configs {
     del_config
-    touch $CONFIG_FILE
+    touch "$CONFIG_FILE"
+    
     set_value ovs bridge_mappings "{{ ovs_bridge_mappings }}"
-    set_value ovs port_mappings "{{ ovs_port_mappings }}"
     set_value ovs_tunnel tunnel_interface_cidr "{{ ovs_dpdk_tunnel_interface_cidr }}"
-    set_value ovs_tunnel tunnel_interface "{{ ovs_dpdk_tunnel_interface }}"
-    set_value ovs_dpdk_configs ovs_coremask ${ovs_coremask:-"0x1"}
-    set_value ovs_dpdk_configs pmd_coremask ${pmd_coremask:-"0x2"}
+    set_value ovs_dpdk_configs ovs_coremask "${ovs_coremask:-0x1}"
+    set_value ovs_dpdk_configs pmd_coremask "${pmd_coremask:-0x2}"
     set_value ovs_dpdk_configs mem_channels "{{ ovs_dpdk_mem_channels }}"
-    set_value ovs_dpdk_configs socket_mem ${ovs_socket_mem:-2048}
+    set_value ovs_dpdk_configs socket_mem "${ovs_socket_mem:-2048}"
     set_value ovs_dpdk_configs alloc_mem "{{ ovs_dpdk_alloc_mem }}"
     set_value ovs_dpdk_configs interface_driver "{{ ovs_dpdk_interface_driver }}"
     set_value ovs_dpdk_configs hugepage_mountpoint "{{ ovs_dpdk_hugepage_mountpoint }}"
-
-    ls -al /sys/class/net/* | awk '$0 ~ /pci/ {n=split($NF,a,"/"); print "\n[" a[n] "]\naddress = " a[n-2]  "\noriginal_driver = "  "\ndpdk_driver = "}' >> $CONFIG_FILE
+    set_value ovs_dpdk_configs dpdk_bridge_name "{{ ovs_dpdk_bridge_name }}"
+    set_value ovs_dpdk_configs n_rxq "{{ ovs_dpdk_n_rxq }}"
+    set_value ovs_dpdk_bondig_configs interfaces "{{ ovs_dpdk_bond_interfaces }}"
+    set_value ovs_dpdk_bondig_configs bond_mode "{{ dpdk_bond_mode }}"
+    set_value ovs_dpdk_bondig_configs lacp "{{ dpdk_bond_lacp }}"
+    set_value ovs_dpdk_bondig_configs bond-detect-mode "{{ dpdk_bond_detect_mode }}"
+    set_value ovs_dpdk_bondig_configs miimon_interval "{{ dpdk_bond_miimon_interval }}"
+    
+    ls -al /sys/class/net/* | awk '
+        $0 ~ /pci/ {
+            n=split($NF,a,"/"); 
+            print "\n[" a[n] "]\naddress = " a[n-2]  "\noriginal_driver = "  "\ndpdk_driver = "
+        }' >> "$CONFIG_FILE"
 
     for nic in $(get_value | grep -v ovs); do
-        set_value $nic original_driver $(get_driver_by_address $(get_value $nic address))
-	    set_value $nic dpdk_driver $(get_value ovs_dpdk_configs interface_driver)
+        set_value "$nic" original_driver "$(get_driver_by_address "$(get_value "$nic" address)")"
+        set_value "$nic" dpdk_driver "$(get_value ovs_dpdk_configs interface_driver)"
     done
 
     set_value ovs_dpdk_configs pci_whitelist "${pci_whitelist:-$(generate_pciwhitelist)}"
+{% set neutron_bridges = neutron_bridge_name.split(',') %}
+{% for bridge in neutron_bridges %}
+    set_value br_ex_vni_mapping {{ bridge }} "[{{ dpdk_br_ex_vni_mapping[bridge] | default([]) | join(',') }}]"
+{% endfor %}
+
+{% for bridge in neutron_bridges %}
+    {% set br_type = dpdk_br_ex_type_mapping[bridge] | default('trunks') %}
+    {% if br_type in ['tag', 'trunks'] %}
+    set_value br_ex_type_mapping {{ bridge }} "{{ br_type }}"
+    {% else %}
+    set_value br_ex_type_mapping {{ bridge }} "trunks"
+    {% endif %}
+{% endfor %}
+
+
 }
 
-
+# Function to delete the configuration file
 function del_config { 
-    rm -f $CONFIG_FILE
+    rm -f "$CONFIG_FILE"
 }
 
-
+# Function to set a value in the configuration file
 function set_value {
-    crudini --set $CONFIG_FILE $1 $2 "$3"
+    crudini --set "$CONFIG_FILE" "$1" "$2" "$3"
 }
 
-
+# Function to get a value from the configuration file
 function get_value {
-    crudini --get $CONFIG_FILE $@
+    crudini --get "$CONFIG_FILE" "$@"
 }
 
-
+# Function to get the driver by PCI address
 function get_driver_by_address {
-    ls /sys/bus/pci/devices/$1/driver -al | awk '{n=split($NF,a,"/"); print a[n]}'
+    ls /sys/bus/pci/devices/"$1"/driver -al | awk '{n=split($NF,a,"/"); print a[n]}'
 }
 
-
+# Function to list OVS NICs
 function list_ovs_nics {
-    for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
-        echo $nic;
+    #for nic in $(get_value ovs port_mappings | tr ',' '\n' | cut -d : -f 1); do
+    for nic in $(get_value ovs_dpdk_bondig_configs interfaces | tr ',' '\n'); do
+        echo "$nic"
     done
 }
 
+# Function to list DPDK NICs
 function list_dpdk_nics {
-    echo $(get_value ovs_tunnel tunnel_interface)
+    echo "$(get_value ovs_tunnel tunnel_interface)"
 }
 
-
+# Function to generate PCI whitelist
 function generate_pciwhitelist {
     _Whitelist=''
     for nic in $(list_ovs_nics); do
-        address="$(get_value $nic address)"
-        if [ "$_Whitelist" == '' ]; then
-            _Whitelist="-w $address"
+        address="$(get_value "$nic" address)"
+        if [ -z "$_Whitelist" ]; then
+            _Whitelist="$address"
         else
-            _Whitelist="$_Whitelist -w $address"
+            _Whitelist="$_Whitelist,$address"
         fi
     done
-    address="$(get_value $(list_dpdk_nics) address)"
-    _Whitelist="$_Whitelist -w $address"
-    echo $_Whitelist
+    
+    #address="$(get_value "$(list_dpdk_nics)" address)"
+    #_Whitelist="$_Whitelist -w $address"
+    
+    echo "$_Whitelist"
 }
 
+# Generate configuration if the CONFIG_FILE does not exist
 if [ ! -e "$CONFIG_FILE" ]; then
-        gen_configs
+    gen_configs
 fi
