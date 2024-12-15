@@ -1,33 +1,105 @@
 ---
-ovs_bridge_mappings: "{% for bridge in neutron_bridge_name.split(',') %}physnet{{ loop.index0 + 1 }}:{{ bridge }}{% if not loop.last %},{% endif %}{% endfor %}"
-ovs_port_mappings: "{% for bridge in neutron_bridge_name.split(',') %} {{ neutron_external_interface.split(',')[loop.index0] }}:{{ bridge }}{% if not loop.last %},{% endif %}{% endfor %}"
+ovsdpdk_services: {}
+
+ovs_bridge_mappings: >-
+  {%- for bridge in neutron_bridge_name.split(',') -%}
+    physnet{{ loop.index0 + 1 }}:{{ bridge }}{% if not loop.last %},{% endif %}
+  {%- endfor -%}
+
+ovs_port_mappings: >-
+  {%- for bridge in neutron_bridge_name.split(',') -%}
+    {{ neutron_external_interface.split(',')[loop.index0] }}:{{ bridge }}{% if not loop.last %},{% endif %}
+  {%- endfor -%}
 
 
-ovs_dpdk_tunnel_interface_network: "{% if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined %}{{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['network']}}/{{hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['netmask'] }}{% else %}{{ hostvars[inventory_hostname].ansible_facts[( ovs_dpdk_bridge_name | replace('-','_') )]['ipv4']['network']}}/{{hostvars[inventory_hostname].ansible_facts[( ovs_dpdk_bridge_name | replace('-','_') )]['ipv4']['netmask'] }}{% endif %}"
+ovs_dpdk_br_ex_type_mapping: "{{ dpdk_br_ex_type_mapping }}"
+#The Strcutre of the ovs_brdige like: 
+#{
+#br-ex=tag
+#br-ex2=trunks
+#}
+#types are [tag,trunks]
+
+ovs_dpdk_br_ex_vni_mapping: "{{ dpdk_br_ex_vni_mapping }}"
+#The Strcutre of the ovs_brdige like: 
+#{
+#br-ex=[vni_1,vni_2,vni_Srange-Erange,...]
+#br-ex2=[vni_1,vni_2,vni_Srange-Erange,...]
+#}
 
 
-ovs_dpdk_tunnel_interface_cidr: "{% if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined %}{{ dpdk_tunnel_interface hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['address']}}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}{% else %}{{ hostvars[inventory_hostname].ansible_facts[( ovs_dpdk_bridge_name | replace('-','_') )]['ipv4']['address'] }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}{% endif %}"
+#if yo dont specify VLAN for your interface our bridges, we will use all trunk on it
+
+# ovs_dpdk_tunnel_interface_network: >-
+#   {% if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined %}
+#     {{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['network'] }}/{{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['netmask'] }}
+#   {% else %}
+#     {{ hostvars[inventory_hostname].ansible_facts[(ovs_dpdk_bridge_name | replace('-', '_'))]['ipv4']['network'] }}/{{ hostvars[inventory_hostname].ansible_facts[(ovs_dpdk_bridge_name | replace('-', '_'))]['ipv4']['netmask'] }}
+#   {% endif %}
+# ovs_dpdk_tunnel_interface_network: >-
+#   {%- if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined -%}
+#     {{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['network'] }}/{{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['netmask'] }}
+#   {%- else -%}
+#     {{ hostvars[inventory_hostname].ansible_facts[ovs_dpdk_bridge_name | replace('-', '_')]['ipv4']['network'] }}/{{ hostvars[inventory_hostname].ansible_facts[ovs_dpdk_bridge_name | replace('-', '_')]['ipv4']['netmask'] }}
+#   {%- endif -%}
 
 
-#ovs_dpdk_tunnel_interface_network: "{{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['network']}}/{{hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['netmask'] }}"
-#ovs_dpdk_tunnel_interface_cidr: "{{ dpdk_tunnel_nterface_address }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}"
-ovs_dpdk_tunnel_interface: "{{ dpdk_tunnel_interface }}"
+# ovs_dpdk_tunnel_interface_cidr: >-
+#   {% if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined %}
+#     {{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['address'] }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}
+#   {% else %}
+#     {{ hostvars[inventory_hostname].ansible_facts[(ovs_dpdk_bridge_name | replace('-', '_'))]['ipv4']['address'] }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}
+#   {% endif %}
+# ovs_dpdk_tunnel_interface_cidr: >-
+#   {%- if hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface] is defined -%}
+#     {{ hostvars[inventory_hostname].ansible_facts[dpdk_tunnel_interface]['ipv4']['address'] }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}
+#   {%- else -%}
+#     {{ hostvars[inventory_hostname].ansible_facts[ovs_dpdk_bridge_name | replace('-', '_')]['ipv4']['address'] }}/{{ ovs_dpdk_tunnel_interface_network | ipaddr('prefix') }}
+#   {%- endif -%}
 
-ovs_dpdk_bridge_name: "{{ dpdk_bridge_name }}"
+ovs_dpdk_tunnel_interface_cidr: "{{ dpdk_tunnel_interface_CIDR }}"
+
+#ovs_dpdk_tunnel_interface: "{{ dpdk_tunnel_interface }}"
+
+ovs_dpdk_bridge_name: "{{ dpdk_bridge_name | replace('-', '_') }}"
 
 ovs_dpdk_mem_channels: "{{ ovs_memory_channels }}"
+
 ovs_dpdk_socket_mem_per_numa: "{{ ovs_socket_memory_per_numa }}"
-#ovs_dpdk_socket_mem_per_numa: "{% for numa in numaList %}{{ ovs_socket_memory }}{% if not loop.last %},{% endif %}{% endfor %}"
+
 ovs_dpdk_alloc_mem: "{{ dpdk_alloc_mem }}"
 
 ovs_dpdk_conf_dir: /etc/kolla/ovs_dpdk
 
 ovs_dpdk_hugepage_mountpoint: /dev/hugepages
-ovs_dpdk_hugepage_auto_config: "{{ huge_page_auto_config }}"
-ovs_dpdk_hugepage_size: "{{ huge_page_size }}"
-#ovs_dpdk_hugepages: "{{ huge_pages }}"
-ovs_dpdk_hugepages: "{% if (ovs_dpdk_hugepage_auto_config | bool) %}{{ ((ansible_facts.memtotal_mb / 1024) * 0.8) | int }}{% else %}{{ huge_pages }}{% endif %}"
 
-ovs_dpdk_interface_driver: "{{ dpdk_interface_driver }}"
+ovs_dpdk_hugepage_auto_config: "{{ huge_page_auto_config }}"
+
+ovs_dpdk_hugepage_size: "{{ huge_page_size }}"
+
+ovs_dpdk_hugepages: >-
+  {%- if ovs_dpdk_hugepage_auto_config | bool -%}
+    {{ ((ansible_facts.memtotal_mb / 1024) * 0.8) | int }}
+  {%- else -%}
+    {{ huge_pages }}
+  {%- endif -%}
+
+ovs_dpdk_interface_driver: "{{ dpdk_interface_driver | replace(',',' ')}}" 
 
 pmd_cpu_per_numa: "{{ pmd_cpu_per_numa_isolated }}"
+
+ovs_dpdk_n_rxq: "{{ dpdk_number_of_read_write_queues }}"
+
+ovs_dpdk_bond_interfaces: "{{ dpdk_bond_interfaces }}"
+
+ovs_dpdk_bond_mode: "{{ dpdk_bond_mode }}"
+
+ovs_dpdk_bond_lacp: "{{ dpdk_bond_lacp }}"
+
+ovs_dpdk_bond_detect_mode: "{{ dpdk_bond_detect_mode }}"
+
+ovs_dpdk_bond_miimon_interval: "{{ dpdk_bond_miimon_interval }}"
+
+ovs_bonding_tunnel_interface_vlan_tag: "{{ bonding_tunnel_interface_vlan_tag }}"
+
+ovs_arbitry_dpdk_tunnel_interface_name: "{{ arbitry_dpdk_tunnel_interface_name | default('eth200') }}"
