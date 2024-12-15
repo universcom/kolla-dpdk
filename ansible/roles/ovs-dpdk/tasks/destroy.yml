@@ -72,43 +72,60 @@
     state: absent
     path: /var/run/openvswitch/
 
-- name: check if cmdline_linux is configured in the boot command
+- name: update dpdk-based grub to normal grub
   become: true
-  lineinfile:
-    backup: true
-    path: /etc/default/grub
-    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT=cgroup_enable=memory swapaccount=1'
-    state: absent
-  register: grub_cmdline_check
-  check_mode: true
-  changed_when: false
-
-- name: Delete if cmdline_linux is configured in the boot command
-  become: true
-  lineinfile:
-    backup: true
-    path: /etc/default/grub
-    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT'
-    state: absent
-  when: grub_cmdline_check.found == 0
-
-- name: add cmdline_linux is configured in the boot command
-  become: true
-  lineinfile:
-    backup: true
-    path: /etc/default/grub
-    insertafter: "^GRUB_CMDLINE_LINUX"
-    line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash cgroup_enable=memory swapaccount=1"'
-    state: present
-    firstmatch: yes
-  when: grub_cmdline_check.found == 0
+  template:
+    src: grub-non-dpdk.j2 
+    dest: /etc/default/grub  
+    follow: False 
+    backup: True 
+    mode: 0644  
+    owner: root  
+    group: root
 
 - name: Update OS grub 
   become: true 
   command:
     cmd: >
       /usr/sbin/update-grub
-  when: grub_cmdline_check.found == 0
+
+# - name: check if cmdline_linux is configured in the boot command
+#   become: true
+#   lineinfile:
+#     backup: true
+#     path: /etc/default/grub
+#     regexp: '^GRUB_CMDLINE_LINUX_DEFAULT=cgroup_enable=memory swapaccount=1'
+#     state: absent
+#   register: grub_cmdline_check
+#   check_mode: true
+#   changed_when: false
+
+# - name: Delete if cmdline_linux is configured in the boot command
+#   become: true
+#   lineinfile:
+#     backup: true
+#     path: /etc/default/grub
+#     regexp: '^GRUB_CMDLINE_LINUX_DEFAULT'
+#     state: absent
+#   when: grub_cmdline_check.found == 0
+
+# - name: add cmdline_linux is configured in the boot command
+#   become: true
+#   lineinfile:
+#     backup: true
+#     path: /etc/default/grub
+#     insertafter: "^GRUB_CMDLINE_LINUX"
+#     line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash cgroup_enable=memory swapaccount=1"'
+#     state: present
+#     firstmatch: yes
+#   when: grub_cmdline_check.found == 0
+
+# - name: Update OS grub 
+#   become: true 
+#   command:
+#     cmd: >
+#       /usr/sbin/update-grub
+#   when: grub_cmdline_check.found == 0
 
 - name: Delete hugepage monunt point form fstab file
   become: true
@@ -117,6 +134,12 @@
     path: /etc/fstab
     regexp: '^nodev'
     state: absent
+
+- name: Remove the /etc/netplan/01-dpdk-interface.yaml file
+  ansible.builtin.file:
+    path: /etc/netplan/01-dpdk-interface.yaml
+    state: absent
+  become: true
 
 - name: Rebooting server
   become: true
