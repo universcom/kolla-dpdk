@@ -6,3 +6,5 @@
 - include_tasks: cleanup_images.yml
 
 - include_tasks: cleanup_host.yml
+
+- include_tasks: ovs_dpdk_cleanup.yml
