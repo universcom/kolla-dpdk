@@ -509,6 +509,22 @@ workaround_ansible_issue_8743: yes
 #glance_enable_rolling_upgrade: "no"
 
 ####################
+# OVS-DPDK options
+####################
+#dpdk_bridge_name: "br-dpdk"
+
+#ovs_dpdk_bond_interfaces: ""
+#huge_pages: "16"
+#huge_page_size: "1G"
+#dpdk_interface_driver: "uio_pci_generic"
+#dpdk_tunnel_interface_CIDR: "Set pre compute sepratly"
+#dpdk_br_ex_type_mapping:  #values in [tag,trunks]
+#  br-ex: tag
+#  br-ex2: trunks
+#dpdk_br_ex_vin_mapping:
+#  br-ex: [81]
+#  br-ex2: [80,140,144-190]
+####################
 # Osprofiler options
 ####################
 # valid values: ["elasticsearch", "redis"]
