@@ -18,6 +18,9 @@ network02
 [compute]
 compute01
 
+[ovs-dpdk]
+compute01 dpdk_tunnel_interface_CIDR=""
+
 [monitoring]
 monitoring01
 
