@@ -28,7 +28,7 @@
       value: "{{ item.value if item.state | default('present') == 'present' else omit }}"
       state: "{{ item.state | default('present') }}"
   loop:
-    - { name: ovn-encap-ip, value: "{{ tunnel_interface_address }}" }
+    - { name: ovn-encap-ip, value: "{{ ovs_tunnel_interface_address }}" }
     - { name: ovn-encap-type, value: geneve }
     - { name: ovn-remote, value: "{{ ovn_sb_connection }}" }
     - { name: ovn-remote-probe-interval, value: "{{ ovn_remote_probe_interval }}" }
