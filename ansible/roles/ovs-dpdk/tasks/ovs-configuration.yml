@@ -18,4 +18,9 @@
   template:
     src: 01-dpdk-interface.yaml.j2
     dest: "/etc/netplan/01-dpdk-interface.yaml"
-    mode: "0770"
+    mode: "0600"
+
+- name: Apply netplan configuration
+  ansible.builtin.command:
+    cmd: netplan apply
+  become: true
