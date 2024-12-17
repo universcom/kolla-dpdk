@@ -18,7 +18,7 @@ First, create and activate a Python virtual environment to isolate the Kolla-Ans
 ```bash
 # Install virtualenv if not already installed
 sudo apt update
-sudo apt install python3-virtualenv
+sudo apt install python3-venv git python3-dev libffi-dev gcc libssl-dev
 
 # Create a virtual environment
 mkdir ~/openstack-kolla
@@ -37,11 +37,11 @@ With the virtual environment active, install Kolla-Ansible from PyPI.
 # Upgrade pip to the latest version
 pip install --upgrade pip
 
-# Install Kolla-Ansible for OpenStack Zed
-pip install kolla-ansible==13.0.0
+# Install Ansible for OpenStack Zed
+pip install 'ansible>=4,<6'
 ```
 
-### 3. Clone the Kolla-Ansible Repository (Optional)
+### 3. Clone the Kolla-Ansible Repository
 
 If you prefer, you can clone the Kolla-Ansible Git repository to work with the latest version of the code.
 
@@ -112,6 +112,7 @@ Run the ***bootstrap-servers*** command to prepare the servers for deployment. T
 ```bash
 # Bootstrap the servers
 kolla-ansible -i <your_inventory_file> bootstrap-servers
+kolla-ansible -i <your_inventory_file> prechecks
 ```
 
 ### 7. Deploy OpenStack
@@ -144,7 +145,21 @@ The destroy command will:
 - Stop and remove the OpenStack containers
 - Remove all networks and volumes used by the containers
 
-### Enable DPDK
+### 10. Using Openstack client
+
+1. Install the OpenStack CLI client:
+
+```bash
+pip install python-openstackclient -c https://releases.openstack.org/constraints/upper/zed
+```
+
+2. OpenStack requires a clouds.yaml or adminrc file where credentials for the admin user are set. To generate this file:
+
+```bash
+kolla-ansible post-deploy
+```
+
+### 11. Enable DPDK
 
 To enable dpdk on the specific host take effect the following changes in the globals.yml file
 
