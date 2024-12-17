@@ -72,11 +72,25 @@ Now that Kolla-Ansible is installed, you need to configure the deployment.
  mkdir -p /etc/kolla
 
  # Copy configuration files
- cp -r kolla-ansible/etc/kolla/* /etc/kolla/
+ cp -r /path/to/venv/share/kolla-anisble-dpdk-integration/etc/kolla/* /etc/kolla/
 
  ```
 
- 2. Edit the globals.yml file to configure your OpenStack deployment (e.g., database, message queue, services).
+ 2. Copy Inventory file
+
+ ```bash
+ cp /path/to/venv/share/kolla-anisble-dpdk-integration/ansible/inventory/* .
+
+ ``` 
+
+ 3. Generate password
+
+ ```bash
+ cd kolla-ansible/tools
+ ./generate_passwords.py
+```
+
+ 4. Edit the globals.yml file to configure your OpenStack deployment (e.g., database, message queue, services).
 
  ```bash
  # Edit globals.yml to configure OpenStack services
@@ -160,6 +174,13 @@ dpdk_br_ex_vni_mapping:
    br-ex2:
     - "80-85"
     - "144"
+```
+
+In the inventory file add node under [ovs-dpdk] section. following the exaple: 
+
+```bash
+[ovs-dpdk]
+cmp33-ddk   dpdk_tunnel_interface_CIDR=192.168.0.119/24
 ```
 
 Then run the following command: 
